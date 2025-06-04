@@ -3,7 +3,7 @@
 
 import React from 'react';
 import { useGame } from '@/contexts/GameContext';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { SYNERGY_CONFIG, SynergyConfig } from '@/config/gameConfig';
 import { Zap, Link2, CheckCircle, TrendingUp } from 'lucide-react'; // Added Link2
 import { Progress } from '@/components/ui/progress';
