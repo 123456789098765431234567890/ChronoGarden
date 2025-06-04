@@ -6,7 +6,7 @@ import { useGame } from '@/contexts/GameContext';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from "@/components/ui/progress";
-import { ERAS, ALL_CROPS_MAP, UPGRADES_CONFIG, ALL_GAME_RESOURCES_MAP, Crop } from '@/config/gameConfig';
+import { ERAS, ALL_CROPS_MAP, UPGRADES_CONFIG, ALL_GAME_RESOURCES_MAP, Crop, GARDEN_PLOT_SIZE, EraID } from '@/config/gameConfig'; // Added GARDEN_PLOT_SIZE and EraID
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Sprout, Clock, PlusCircle, Trash2, CheckCircle } from 'lucide-react';
 import Image from 'next/image';
@@ -18,11 +18,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from '@/components/ui/label';
-import { useToast } from "@/hooks/use-toast"; // Added for rare seed toast
+import { useToast } from "@/hooks/use-toast";
 
 export default function GardenPlot() {
   const { state, dispatch } = useGame();
-  const { toast } = useToast(); // Added for rare seed toast
+  const { toast } = useToast();
   const currentEraConfig = ERAS[state.currentEra];
   const [currentTime, setCurrentTime] = useState(Date.now());
   
@@ -44,31 +44,16 @@ export default function GardenPlot() {
 
   const handlePlantCrop = (slotIndex: number) => {
     if (selectedCropToPlant) {
-      // Dispatch USER_INTERACTION to update lastUserInteractionTime
       dispatch({ type: 'USER_INTERACTION' });
       dispatch({ type: 'PLANT_CROP', payload: { cropId: selectedCropToPlant, era: state.currentEra, slotIndex } });
     }
   };
 
   const handleHarvestCrop = (slotIndex: number) => {
-    const oldRareSeedCount = state.rareSeeds.length;
-    // Dispatch USER_INTERACTION
     dispatch({ type: 'USER_INTERACTION' });
     dispatch({ type: 'HARVEST_CROP', payload: { slotIndex } });
-
-    // Check if a rare seed was found by comparing length after dispatch
-    // This is a bit of a hack; ideally, the reducer action would return info or dispatch a separate event.
-    // For now, we access the latest state (which might not be updated yet in this render cycle).
-    // A more robust way is to check after a brief timeout or listen to a custom event.
-    // Or, have the reducer itself set a flag that a toast should be shown.
-    // For simplicity in this phase, we'll rely on the component re-rendering.
-    // The check below might be unreliable due to state update timing.
-    // A better place for this toast is within the GameContext after the HARVEST_CROP action modifies rareSeeds.
-    // However, to keep changes localized here as per prompt structure:
-    // This toast won't fire correctly here. It should be in GameContext or GameClientLayout listening to state.rareSeeds.
   };
   
-  // Effect to show toast when a new rare seed is acquired
   useEffect(() => {
     const lastRareSeed = state.rareSeeds.length > 0 ? state.rareSeeds[state.rareSeeds.length - 1] : null;
     if (lastRareSeed && !sessionStorage.getItem(`toast_rare_seed_${lastRareSeed}`)) {
@@ -78,7 +63,7 @@ export default function GardenPlot() {
                 title: "🌟 Rare Seed Found! 🌟",
                 description: `You found a rare ${crop.name} seed! It now has special properties.`,
             });
-            sessionStorage.setItem(`toast_rare_seed_${lastRareSeed}`, 'true'); // Prevent re-toasting for same seed in session
+            sessionStorage.setItem(`toast_rare_seed_${lastRareSeed}`, 'true');
         }
     }
   }, [state.rareSeeds, toast]);
@@ -106,9 +91,9 @@ export default function GardenPlot() {
 
   const getGrowthProgress = (plantedAt: number, baseGrowthTime: number, cropId: string, cropEra: EraID) => {
     let growthTime = baseGrowthTime;
-    if (state.rareSeeds.includes(cropId)) growthTime *= 0.9; // Rare seed 10% faster growth
+    if (state.rareSeeds.includes(cropId)) growthTime *= 0.9; 
 
-    const fasterGrowthUpgradeId = `cropGrowth_${cropEra}`; // e.g. cropGrowth_Present
+    const fasterGrowthUpgradeId = `cropGrowth_${cropEra}`; 
     const fasterGrowthLevel = state.upgradeLevels[fasterGrowthUpgradeId] || 0;
     if (UPGRADES_CONFIG[fasterGrowthUpgradeId] && fasterGrowthLevel > 0) {
       growthTime *= UPGRADES_CONFIG[fasterGrowthUpgradeId].effect(fasterGrowthLevel);
@@ -150,7 +135,7 @@ export default function GardenPlot() {
       <CardHeader>
         <CardTitle className="font-headline text-2xl flex items-center">
           <currentEraConfig.icon className="w-6 h-6 mr-2 text-primary" />
-          {currentEraConfig.name} Garden Plot (3x3)
+          {currentEraConfig.name} Garden Plot ({GARDEN_PLOT_SIZE === 9 ? "3x3" : `${Math.sqrt(GARDEN_PLOT_SIZE)}x${Math.sqrt(GARDEN_PLOT_SIZE)}`})
         </CardTitle>
         <CardDescription>{currentEraConfig.description}</CardDescription>
         {currentEraConfig.specialMechanic && (
@@ -188,7 +173,7 @@ export default function GardenPlot() {
 
         <div className="grid grid-cols-3 gap-2 sm:gap-4">
           {state.plotSlots.map((slot, index) => {
-            if (slot && slot.era === state.currentEra) { // Only display crops planted in the current era
+            if (slot && slot.era === state.currentEra) { 
               const cropConfig = ALL_CROPS_MAP[slot.cropId];
               if (!cropConfig) return ( 
                 <Card key={index} className="aspect-square flex items-center justify-center bg-muted">
@@ -245,7 +230,6 @@ export default function GardenPlot() {
                 </Card>
               );
             } else {
-              // Empty slot or crop from a different era (don't display other era's crops for now to avoid clutter)
               return (
                 <Card key={index} className="aspect-square flex items-center justify-center bg-muted/30 hover:bg-muted/50 transition-colors border-dashed">
                   <Button 
