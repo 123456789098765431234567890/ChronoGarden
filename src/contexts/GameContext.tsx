@@ -45,8 +45,11 @@ const getInitialState = (): GameState => {
       // Ensure activeAutomations and upgradeLevels are initialized
       savedState.activeAutomations = savedState.activeAutomations || {};
       savedState.upgradeLevels = savedState.upgradeLevels || {};
+      // Ensure automationRules is an array if it was saved
+      savedState.automationRules = Array.isArray(savedState.automationRules) ? savedState.automationRules : [];
+
       AUTOMATION_RULES_CONFIG.forEach(rule => {
-        if(savedState.activeAutomations[rule.id] === undefined && state.automationRules.find(r => r.id === rule.id)) {
+        if(savedState.activeAutomations[rule.id] === undefined && savedState.automationRules.find(r => r.id === rule.id)) {
             savedState.activeAutomations[rule.id] = true; // Default to active if built
         }
       });
