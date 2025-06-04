@@ -24,7 +24,7 @@ import PrestigeAltar from '@/components/game/PrestigeAltar';
 import UpgradesPanel from '@/components/game/UpgradesPanel';
 import { useGame } from '@/contexts/GameContext';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ShieldQuestion, Droplets, Sun, Coins, Power, Zap as ChronoEnergyIcon } from 'lucide-react';
+import { ShieldQuestion, Droplets, Sun, Coins, Power, Zap as ChronoEnergyIcon, MessageSquare } from 'lucide-react';
 import { ERAS } from '@/config/gameConfig';
 import { useToast } from "@/hooks/use-toast";
 
@@ -133,8 +133,14 @@ export default function GameClientLayout() {
           )}
 
         </div>
-        <footer className="text-center p-4 border-t text-xs text-muted-foreground">
-          ChronoGarden: Temporal Harvest - &copy; {new Date().getFullYear()}
+        <footer className="text-center p-4 border-t text-xs text-muted-foreground flex items-center justify-center space-x-4">
+          <span>ChronoGarden: Temporal Harvest - &copy; {new Date().getFullYear()}</span>
+          <Button variant="outline" size="sm" asChild>
+            <a href="https://forms.office.com/r/Ezbv7xmgpK" target="_blank" rel="noopener noreferrer">
+              <MessageSquare className="mr-2 h-4 w-4" />
+              Feedback
+            </a>
+          </Button>
         </footer>
       </SidebarInset>
       
