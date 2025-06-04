@@ -6,7 +6,7 @@ import { useGame } from '@/contexts/GameContext';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from "@/components/ui/progress";
-import { ERAS, ALL_CROPS_MAP, UPGRADES_CONFIG, ALL_GAME_RESOURCES_MAP, Crop, GARDEN_PLOT_SIZE, EraID } from '@/config/gameConfig'; // Added GARDEN_PLOT_SIZE and EraID
+import { ERAS, ALL_CROPS_MAP, UPGRADES_CONFIG, ALL_GAME_RESOURCES_MAP, Crop, GARDEN_PLOT_SIZE, EraID, PERMANENT_UPGRADES_CONFIG } from '@/config/gameConfig';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Sprout, Clock, PlusCircle, Trash2, CheckCircle } from 'lucide-react';
 import Image from 'next/image';
@@ -44,6 +44,11 @@ export default function GardenPlot() {
 
   const handlePlantCrop = (slotIndex: number) => {
     if (selectedCropToPlant) {
+      const cropToPlant = ALL_CROPS_MAP[selectedCropToPlant];
+      if (cropToPlant.specialGrowthCondition && !cropToPlant.specialGrowthCondition(state)) {
+        toast({ title: "Cannot Plant", description: `${cropToPlant.name} has special growth conditions that are not met. Check Synergies or info.`, variant: "destructive" });
+        return;
+      }
       dispatch({ type: 'USER_INTERACTION' });
       dispatch({ type: 'PLANT_CROP', payload: { cropId: selectedCropToPlant, era: state.currentEra, slotIndex } });
     }
@@ -75,6 +80,12 @@ export default function GardenPlot() {
     if (plantedCrop) {
         const cropConfig = ALL_CROPS_MAP[plantedCrop.cropId];
         let growthTime = cropConfig.growthTime;
+
+        // Apply permanent global speed boost
+        const globalSpeedBoostLevel = state.permanentUpgradeLevels.permGlobalGrowSpeed || 0;
+        if (globalSpeedBoostLevel > 0) {
+            growthTime *= PERMANENT_UPGRADES_CONFIG.permGlobalGrowSpeed.effect(globalSpeedBoostLevel) as number;
+        }
         if (state.rareSeeds.includes(cropConfig.id)) growthTime *= 0.9;
 
         const fasterGrowthUpgradeId = `cropGrowth_${plantedCrop.era}`;
@@ -82,15 +93,24 @@ export default function GardenPlot() {
         if (fasterGrowthLevel > 0 && UPGRADES_CONFIG[fasterGrowthUpgradeId]) {
             growthTime *= UPGRADES_CONFIG[fasterGrowthUpgradeId].effect(fasterGrowthLevel);
         }
+        if (plantedCrop.era === "Future" && state.activeAutomations['growthoptimizer_future']) {
+          growthTime *= 0.75; // 25% reduction from Future Growth Optimizer
+        }
+
         const isMature = (currentTime - plantedCrop.plantedAt) / 1000 >= growthTime;
         if (!isMature) {
-             dispatch({ type: 'HARVEST_CROP', payload: { slotIndex } }); 
+             dispatch({ type: 'HARVEST_CROP', payload: { slotIndex } }); // Will effectively clear it if not mature due to game logic
         }
     }
   };
 
   const getGrowthProgress = (plantedAt: number, baseGrowthTime: number, cropId: string, cropEra: EraID) => {
     let growthTime = baseGrowthTime;
+    
+    const globalSpeedBoostLevel = state.permanentUpgradeLevels.permGlobalGrowSpeed || 0;
+    if (globalSpeedBoostLevel > 0) {
+        growthTime *= PERMANENT_UPGRADES_CONFIG.permGlobalGrowSpeed.effect(globalSpeedBoostLevel) as number;
+    }
     if (state.rareSeeds.includes(cropId)) growthTime *= 0.9; 
 
     const fasterGrowthUpgradeId = `cropGrowth_${cropEra}`; 
@@ -98,6 +118,15 @@ export default function GardenPlot() {
     if (UPGRADES_CONFIG[fasterGrowthUpgradeId] && fasterGrowthLevel > 0) {
       growthTime *= UPGRADES_CONFIG[fasterGrowthUpgradeId].effect(fasterGrowthLevel);
     }
+    if (cropEra === "Future" && state.activeAutomations['growthoptimizer_future']) {
+        growthTime *= 0.75; // 25% reduction
+    }
+
+    const cropConfig = ALL_CROPS_MAP[cropId];
+    if (cropConfig.specialGrowthCondition && !cropConfig.specialGrowthCondition(state)) {
+      return 0; // Growth halted if special condition not met
+    }
+
     const elapsedTime = (currentTime - plantedAt) / 1000;
     return Math.min(100, (elapsedTime / growthTime) * 100);
   };
@@ -112,10 +141,19 @@ export default function GardenPlot() {
       costMultiplier = UPGRADES_CONFIG[cheaperCropsUpgradeId].effect(cheaperCropsLevel);
     }
 
-    const dripIrrigationUpgradeId = `waterCost_${crop.era}`;
-     if (UPGRADES_CONFIG[dripIrrigationUpgradeId] && state.upgradeLevels[dripIrrigationUpgradeId] > 0){
-          waterCostMultiplier = UPGRADES_CONFIG[dripIrrigationUpgradeId].effect(state.upgradeLevels[dripIrrigationUpgradeId]);
+    const waterCostUpgradeId = `waterCost_${crop.era}`;
+     if (UPGRADES_CONFIG[waterCostUpgradeId] && state.upgradeLevels[waterCostUpgradeId] > 0){
+          waterCostMultiplier = UPGRADES_CONFIG[waterCostUpgradeId].effect(state.upgradeLevels[waterCostUpgradeId]);
       }
+    
+    // Synergy: Primordial Echoes (reduced water cost for Present)
+    if (crop.era === "Present" && SYNERGY_CONFIG.primordialEchoes) {
+      const synergyLevel = Math.floor(state.synergyStats.cropsHarvestedPrehistoric / SYNERGY_CONFIG.primordialEchoes.threshold);
+      const maxSynergyLevel = SYNERGY_CONFIG.primordialEchoes.maxLevels || Infinity;
+      const effectiveSynergyLevel = Math.min(synergyLevel, maxSynergyLevel);
+      waterCostMultiplier *= (1 - (effectiveSynergyLevel * SYNERGY_CONFIG.primordialEchoes.effectPerLevel));
+    }
+
 
     const modifiedCosts: Record<string, number> = {};
     Object.entries(crop.cost).forEach(([resId, amount]) => {
@@ -128,7 +166,15 @@ export default function GardenPlot() {
     return modifiedCosts;
   };
 
-  const gardenPlotBg = state.currentEra === "Prehistoric" ? "bg-yellow-900/20" : "bg-green-800/10";
+  const gardenPlotBgStyles = {
+    "Present": "bg-green-800/10",
+    "Prehistoric": "bg-yellow-900/20",
+    "Medieval": "bg-gray-700/20",
+    "Modern": "bg-blue-800/10",
+    "Future": "bg-indigo-900/30",
+  }
+  const gardenPlotBg = gardenPlotBgStyles[state.currentEra] || "bg-muted/20";
+
 
   return (
     <Card className={`shadow-lg ${gardenPlotBg}`}>
@@ -158,11 +204,18 @@ export default function GardenPlot() {
                 const CropIcon = crop.icon;
                 const modifiedCost = getModifiedCropCost(crop);
                 const costString = Object.entries(modifiedCost).map(([k,v]) => `${v} ${ALL_GAME_RESOURCES_MAP[k]?.name || k}`).join(', ');
+                let plantDisabled = false;
+                let plantTooltip = "";
+                if (crop.specialGrowthCondition && !crop.specialGrowthCondition(state)) {
+                    plantDisabled = true;
+                    plantTooltip = `${crop.name} has unmet growth conditions.`;
+                }
+
                 return (
-                  <SelectItem key={crop.id} value={crop.id}>
+                  <SelectItem key={crop.id} value={crop.id} disabled={plantDisabled} title={plantTooltip}>
                     <div className="flex items-center">
                       <CropIcon className="w-4 h-4 mr-2" />
-                      {crop.name} (Cost: {costString})
+                      {crop.name} (Cost: {costString}) {plantDisabled ? " (Blocked)" : ""}
                     </div>
                   </SelectItem>
                 );
@@ -184,6 +237,7 @@ export default function GardenPlot() {
               const CropIcon = cropConfig.icon;
               const growthProgress = getGrowthProgress(slot.plantedAt, cropConfig.growthTime, slot.cropId, slot.era);
               const isMature = growthProgress >= 100;
+              const canGrow = !cropConfig.specialGrowthCondition || cropConfig.specialGrowthCondition(state);
 
               return (
                 <Card key={slot.id || index} className="shadow-md relative overflow-hidden flex flex-col justify-between aspect-square bg-card">
@@ -203,7 +257,9 @@ export default function GardenPlot() {
                   </CardHeader>
                   <CardContent className="text-xs px-2 pb-1 flex-grow">
                     <Progress value={growthProgress} className="w-full h-1.5 mb-1" />
-                    <p className="text-center text-muted-foreground">{isMature ? "Ready!" : `${Math.floor(growthProgress)}%`}</p>
+                    <p className="text-center text-muted-foreground">
+                        {isMature ? "Ready!" : !canGrow ? "Stalled..." : `${Math.floor(growthProgress)}%`}
+                    </p>
                   </CardContent>
                   <CardFooter className="p-1 sm:p-2">
                     {isMature ? (
@@ -230,13 +286,22 @@ export default function GardenPlot() {
                 </Card>
               );
             } else {
+                 const selectedCropConfig = ALL_CROPS_MAP[selectedCropToPlant];
+                 let plantDisabled = !selectedCropToPlant || availableCropsInCurrentEra.length === 0 || !availableCropsInCurrentEra.find(c => c.id === selectedCropToPlant);
+                 let plantTooltip = "";
+                 if (selectedCropConfig && selectedCropConfig.specialGrowthCondition && !selectedCropConfig.specialGrowthCondition(state)) {
+                     plantDisabled = true;
+                     plantTooltip = `${selectedCropConfig.name} has unmet growth conditions.`;
+                 }
+
               return (
                 <Card key={index} className="aspect-square flex items-center justify-center bg-muted/30 hover:bg-muted/50 transition-colors border-dashed">
                   <Button 
                     variant="ghost" 
                     className="w-full h-full flex flex-col items-center justify-center"
                     onClick={() => handlePlantCrop(index)}
-                    disabled={!selectedCropToPlant || availableCropsInCurrentEra.length === 0 || !availableCropsInCurrentEra.find(c => c.id === selectedCropToPlant)}
+                    disabled={plantDisabled}
+                    title={plantTooltip}
                   >
                     <PlusCircle className="w-6 h-6 text-primary mb-1" />
                     <span className="text-xs text-center">Plant Selected</span>
@@ -259,5 +324,3 @@ export default function GardenPlot() {
     </Card>
   );
 }
-
-    

@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AUTOMATION_RULES_CONFIG, AutomationRule, ALL_GAME_RESOURCES_MAP } from '@/config/gameConfig';
+import { AUTOMATION_RULES_CONFIG, AutomationRule, ALL_GAME_RESOURCES_MAP, ERAS } from '@/config/gameConfig';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Settings2, PlusCircle, Trash2, Bot, PowerOff, Power } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
@@ -17,13 +17,14 @@ import { Switch } from '@/components/ui/switch';
 export default function AutomationStation() {
   const { state, dispatch } = useGame();
   const { toast } = useToast();
+  const currentEraConfig = ERAS[state.currentEra];
   
-  const availableRulesToBuildInCurrentEra = AUTOMATION_RULES_CONFIG.filter(r => r.era === state.currentEra && !r.id.includes("_legacy"));
+  const availableRulesToBuildInCurrentEra = AUTOMATION_RULES_CONFIG.filter(r => r.era === state.currentEra);
   const [selectedRuleId, setSelectedRuleId] = useState<string>("");
 
   useEffect(() => {
-    const rulesForEra = AUTOMATION_RULES_CONFIG.filter(r => r.era === state.currentEra && !r.id.includes("_legacy"));
-    if (rulesForEra.length > 0 && !rulesForEra.find(r => r.id === selectedRuleId)) {
+    const rulesForEra = AUTOMATION_RULES_CONFIG.filter(r => r.era === state.currentEra);
+    if (rulesForEra.length > 0 && (!selectedRuleId || !rulesForEra.find(r => r.id === selectedRuleId))) {
       setSelectedRuleId(rulesForEra[0].id);
     } else if (rulesForEra.length === 0) {
       setSelectedRuleId("");
@@ -85,10 +86,10 @@ export default function AutomationStation() {
       <CardHeader>
         <CardTitle className="font-headline text-2xl flex items-center">
           <Settings2 className="w-6 h-6 mr-2 text-primary" />
-          Automation Station ({state.currentEra})
+          Automation Station ({currentEraConfig.name})
         </CardTitle>
         <CardDescription>
-          Design and implement automated systems for the {state.currentEra} era.
+          Design and implement automated systems for the {currentEraConfig.name} era.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -118,6 +119,7 @@ export default function AutomationStation() {
                           .map(([res,amt]) => `${amt} ${ALL_GAME_RESOURCES_MAP[res]?.name || res}`)
                           .join(', ')}
                       </p>
+                       <p className="italic">{selectedRuleDetails.effect}</p>
                     </div>
                   )}
                 </div>
@@ -141,7 +143,7 @@ export default function AutomationStation() {
           </div>
 
           <div>
-            <h3 className="font-headline text-lg mb-2">Manage Automations ({state.currentEra})</h3>
+            <h3 className="font-headline text-lg mb-2">Manage Automations ({currentEraConfig.name})</h3>
             {builtAutomationsInCurrentEra.length > 0 ? (
               <ul className="space-y-2 max-h-96 overflow-y-auto p-1">
                 {builtAutomationsInCurrentEra.map((rule) => (
@@ -179,10 +181,8 @@ export default function AutomationStation() {
         </div>
       </CardContent>
        <CardFooter className="text-sm text-muted-foreground">
-        Note: Active automations might affect soil quality or have other subtle effects.
+        Note: Active automations might affect soil quality or have other subtle effects. Ensure you have enough resources for their upkeep if applicable.
       </CardFooter>
     </Card>
   );
 }
-
-    

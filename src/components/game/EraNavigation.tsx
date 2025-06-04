@@ -6,7 +6,7 @@ import { useGame } from '@/contexts/GameContext';
 import { ERAS, EraID } from '@/config/gameConfig';
 import { Button } from '@/components/ui/button';
 import { SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarGroup, SidebarGroupLabel } from '@/components/ui/sidebar';
-import { Zap, Lock, CheckCircle } from 'lucide-react'; // Added CheckCircle
+import { Zap, Lock, CheckCircle } from 'lucide-react'; 
 import { Badge } from '@/components/ui/badge';
 import { useToast } from "@/hooks/use-toast";
 
@@ -22,12 +22,7 @@ export default function EraNavigation() {
     const eraConfig = ERAS[eraId];
     if (state.chronoEnergy >= eraConfig.unlockCost) {
       dispatch({ type: 'UNLOCK_ERA', payload: eraId });
-      // Check if unlock was successful by peeking into next state (not ideal but works for toast)
-      // A better way would be for the reducer to return a flag or for the component to useEffect on unlockedEras
-      toast({
-        title: `${eraConfig.name} Unlocked!`,
-        description: `You can now travel to the ${eraConfig.name}.`,
-      });
+      // Toast is now handled by useEffect in GameClientLayout for consistency
     } else {
       toast({
         title: "Not Enough Chrono-Energy",
@@ -90,5 +85,3 @@ export default function EraNavigation() {
     </SidebarGroup>
   );
 }
-
-    
