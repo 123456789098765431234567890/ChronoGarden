@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { GameProvider } from '@/contexts/GameContext';
 import './globals.css';
-import { Toaster } from "@/components/ui/toaster"; // Import Toaster
+import { Toaster } from "@/components/ui/toaster";
+import { ThemeProvider } from "@/components/ui/theme-provider"; // Import ThemeProvider
 
 export const metadata: Metadata = {
   title: 'ChronoGarden: Temporal Harvest',
@@ -22,10 +23,17 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=swap" rel="stylesheet" />
       </head>
       <body className="font-body antialiased min-h-screen bg-background text-foreground">
-        <GameProvider>
-          {children}
-          <Toaster />
-        </GameProvider>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <GameProvider>
+            {children}
+            <Toaster />
+          </GameProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -6,7 +6,8 @@ import { SidebarTrigger } from '@/components/ui/sidebar';
 import ChronoLeafIcon from '@/components/icons/ChronoLeafIcon';
 import { useGame } from '@/contexts/GameContext';
 import { ERAS, ALL_GAME_RESOURCES_MAP } from '@/config/gameConfig';
-import { Zap, Droplets, Sun, Coins, Power, Settings2 as SettingsIcon } from 'lucide-react'; // Added SettingsIcon
+import { Zap, Droplets, Sun, Coins, Power } from 'lucide-react';
+import { ThemeToggle } from '@/components/ui/theme-toggle'; // Added ThemeToggle import
 
 export default function AppHeader() {
   const { state } = useGame();
@@ -54,13 +55,9 @@ export default function AppHeader() {
             })}
           </div>
           
-          <button title="Settings (Placeholder)" className="p-2 hover:bg-accent rounded-md">
-            <SettingsIcon className="h-5 w-5 text-muted-foreground" />
-          </button>
+          <ThemeToggle /> 
         </div>
       </div>
     </header>
   );
 }
-
-    
