@@ -13,7 +13,6 @@ import {
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import AppHeader from '@/components/game/AppHeader';
 import EraNavigation from '@/components/game/EraNavigation';
 import ResourcePanel from '@/components/game/ResourcePanel';
@@ -24,7 +23,7 @@ import PrestigeAltar from '@/components/game/PrestigeAltar';
 import UpgradesPanel from '@/components/game/UpgradesPanel';
 import { useGame } from '@/contexts/GameContext';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ShieldQuestion, Droplets, Sun, Coins, Power, Zap as ChronoEnergyIcon, MessageSquare } from 'lucide-react';
+import { ShieldQuestion, Droplets, MessageSquare } from 'lucide-react';
 import { ERAS } from '@/config/gameConfig';
 import { useToast } from "@/hooks/use-toast";
 
@@ -55,17 +54,6 @@ export default function GameClientLayout() {
     dispatch({ type: 'USER_INTERACTION' });
     dispatch({ type: 'CLICK_WATER_BUTTON' });
   };
-
-  const addDebugResource = (resourceId: string, amount: number) => {
-    dispatch({ type: 'USER_INTERACTION' });
-    dispatch({ type: 'UPDATE_RESOURCE', payload: { resourceId, amount } });
-  };
-  
-  const addDebugChronoEnergy = (amount: number) => {
-    dispatch({ type: 'USER_INTERACTION' });
-    dispatch({ type: 'ADD_CHRONO_ENERGY', payload: amount } );
-  };
-
 
   return (
     <SidebarProvider defaultOpen>
@@ -114,24 +102,6 @@ export default function GameClientLayout() {
             </TabsContent>
           </Tabs>
         
-          {process.env.NODE_ENV === 'development' && (
-            <Card className="mt-6">
-              <CardHeader>
-                <CardTitle className="font-headline text-lg">Debug Controls</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={() => addDebugResource('Water', 100)}><Droplets className="mr-1 h-4 w-4"/>+100 Water</Button>
-                <Button size="sm" variant="outline" onClick={() => addDebugResource('Sunlight', 100)}><Sun className="mr-1 h-4 w-4"/>+100 Sunlight</Button>
-                <Button size="sm" variant="outline" onClick={() => addDebugResource('Coins', 1000)}><Coins className="mr-1 h-4 w-4"/>+1K Coins</Button>
-                <Button size="sm" variant="outline" onClick={() => addDebugResource('Energy', 100)}><Power className="mr-1 h-4 w-4"/>+100 Energy</Button>
-                <Button size="sm" variant="outline" onClick={() => addDebugChronoEnergy(100)}><ChronoEnergyIcon className="mr-1 h-4 w-4"/>+100 Chrono</Button>
-                <Button size="sm" variant="outline" onClick={() => addDebugResource('DinoBone', 10)}>+10 DinoBone</Button>
-                <Button size="sm" variant="outline" onClick={() => addDebugResource('MysticSpores', 10)}>+10 MysticSpores</Button>
-                <Button size="sm" variant="destructive" onClick={() => { if (typeof window !== 'undefined') {localStorage.removeItem('chronoGardenSave'); sessionStorage.clear();} window.location.reload();}}>Reset & Reload</Button>
-              </CardContent>
-            </Card>
-          )}
-
         </div>
         <footer className="text-center p-4 border-t text-xs text-muted-foreground flex items-center justify-center space-x-4">
           <span>ChronoGarden: Temporal Harvest - &copy; {new Date().getFullYear()}</span>
