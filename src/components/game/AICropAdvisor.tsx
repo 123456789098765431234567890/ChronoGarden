@@ -11,7 +11,14 @@ import { Label } from '@/components/ui/label';
 import { BrainCircuit, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from "@/hooks/use-toast";
-import { ALL_CROPS_MAP, ERAS, ALL_GAME_RESOURCES_MAP } from '@/config/gameConfig'; // Added imports
+import { 
+    ALL_CROPS_MAP, 
+    ERAS, 
+    ALL_GAME_RESOURCES_MAP,
+    ALL_CROPS_LIST, // Import full list for AI
+    AUTOMATION_RULES_CONFIG, // Import for AI
+    UPGRADES_CONFIG // Import for AI
+} from '@/config/gameConfig';
 
 export default function AICropAdvisor() {
   const { state, dispatch } = useGame();
@@ -28,7 +35,7 @@ export default function AICropAdvisor() {
     const cropDetailsString = plantedCropsInCurrentEra.map(slot => {
       if (!slot) return '';
       const crop = ALL_CROPS_MAP[slot.cropId];
-      return `${crop?.name || 'Unknown Crop'} (planted)`;
+      return `${crop?.name || 'Unknown Crop'} (planted at ${new Date(slot.plantedAt).toLocaleTimeString()}, ID: ${slot.id})`;
     }).filter(Boolean).join(', ') || 'No crops planted in this era.';
 
     const cropHealthData = customCropHealth ||
@@ -40,16 +47,23 @@ ${state.currentEra} Era Specific Resources: ${Object.entries(state.resources)
   .map(([key, value]) => `${ALL_GAME_RESOURCES_MAP[key]?.name || key}: ${Math.floor(value)}`)
   .join(', ') || 'None available'
 }.
-Recent issues: None noted by player.`;
+Recent issues: None noted by player.
+Unlocked Eras: ${state.unlockedEras.join(', ')}.
+Prestige Count: ${state.prestigeCount}.
+Rare Seeds Owned: ${state.rareSeeds.map(id => ALL_CROPS_MAP[id]?.name || id).join(', ') || 'None'}.`;
 
     const activeAutomationsInCurrentEra = state.automationRules
       .filter(rule => rule.era === state.currentEra && state.activeAutomations[rule.id])
-      .map(rule => rule.name)
+      .map(rule => `${rule.name} (ID: ${rule.id})`)
       .join(', ') || 'None active in this era.';
+    
+    const builtAutomationsAcrossAllEras = state.automationRules
+      .map(rule => `${rule.name} (ID: ${rule.id}, Era: ${rule.era}, Active: ${!!state.activeAutomations[rule.id]})`)
+      .join('; ');
 
     const automationConfiguration = customAutomationConfig ||
       `Active automations in ${state.currentEra}: ${activeAutomationsInCurrentEra}.
-Total automations built across all eras: ${state.automationRules.length}.`;
+Total automations built across all eras: ${state.automationRules.length}. List: ${builtAutomationsAcrossAllEras}.`;
 
     const era = state.currentEra;
 
@@ -58,6 +72,11 @@ Total automations built across all eras: ${state.automationRules.length}.`;
         cropHealthData,
         automationConfiguration,
         era,
+        allCropsData: JSON.stringify(ALL_CROPS_LIST),
+        allResourcesData: JSON.stringify(ALL_GAME_RESOURCES_MAP),
+        allAutomationsData: JSON.stringify(AUTOMATION_RULES_CONFIG),
+        allUpgradesData: JSON.stringify(UPGRADES_CONFIG),
+        allErasData: JSON.stringify(ERAS),
       });
       dispatch({ type: 'SET_AI_SUGGESTION', payload: result.suggestions });
       toast({ title: "AI Suggestion Received!", description: "Check the advice from your AI Crop Engineer." });
@@ -76,7 +95,7 @@ Total automations built across all eras: ${state.automationRules.length}.`;
           AI Crop Advisor
         </CardTitle>
         <CardDescription>
-          Get intelligent suggestions from your AI Crop Engineer to optimize your garden based on current conditions in the {state.currentEra} era.
+          Get intelligent suggestions from your AI Crop Engineer to optimize your garden based on current conditions in the {state.currentEra} era. The AI has access to all game data.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
