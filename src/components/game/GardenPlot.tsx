@@ -6,7 +6,7 @@ import { useGame } from '@/contexts/GameContext';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from "@/components/ui/progress";
-import { ERAS, ALL_CROPS_MAP, UPGRADES_CONFIG, ALL_GAME_RESOURCES_MAP, Crop, GARDEN_PLOT_SIZE, EraID, PERMANENT_UPGRADES_CONFIG } from '@/config/gameConfig';
+import { ERAS, ALL_CROPS_MAP, UPGRADES_CONFIG, ALL_GAME_RESOURCES_MAP, Crop, GARDEN_PLOT_SIZE, EraID, PERMANENT_UPGRADES_CONFIG, SYNERGY_CONFIG } from '@/config/gameConfig';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Sprout, Clock, PlusCircle, Trash2, CheckCircle } from 'lucide-react';
 import Image from 'next/image';
@@ -61,14 +61,14 @@ export default function GardenPlot() {
   
   useEffect(() => {
     const lastRareSeed = state.rareSeeds.length > 0 ? state.rareSeeds[state.rareSeeds.length - 1] : null;
-    if (lastRareSeed && !sessionStorage.getItem(`toast_rare_seed_${lastRareSeed}`)) {
+    if (lastRareSeed && (typeof window !== 'undefined' && !sessionStorage.getItem(`toast_rare_seed_${lastRareSeed}`))) {
         const crop = ALL_CROPS_MAP[lastRareSeed];
         if (crop) {
             toast({
                 title: "🌟 Rare Seed Found! 🌟",
                 description: `You found a rare ${crop.name} seed! It now has special properties.`,
             });
-            sessionStorage.setItem(`toast_rare_seed_${lastRareSeed}`, 'true');
+            if (typeof window !== 'undefined') sessionStorage.setItem(`toast_rare_seed_${lastRareSeed}`, 'true');
         }
     }
   }, [state.rareSeeds, toast]);
