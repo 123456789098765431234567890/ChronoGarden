@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"; // Added import
 import AppHeader from '@/components/game/AppHeader';
 import EraNavigation from '@/components/game/EraNavigation';
 import ResourcePanel from '@/components/game/ResourcePanel';
@@ -20,14 +21,14 @@ import GardenPlot from '@/components/game/GardenPlot';
 import AutomationStation from '@/components/game/AutomationStation';
 import AICropAdvisor from '@/components/game/AICropAdvisor';
 import PrestigeAltar from '@/components/game/PrestigeAltar';
-import UpgradesPanel from '@/components/game/UpgradesPanel'; // New import
+import UpgradesPanel from '@/components/game/UpgradesPanel';
 import { useGame } from '@/contexts/GameContext';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ShieldQuestion, Droplets, Sun, Coins, Power, PlusCircle } from 'lucide-react'; // Added icons for debug
+import { ShieldQuestion, Droplets, Sun, Coins, Power, PlusCircle } from 'lucide-react';
 
 
 export default function GameClientLayout() {
-  const { dispatch } = useGame(); // Get dispatch for debug and water button
+  const { dispatch } = useGame();
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("garden");
 
@@ -70,7 +71,7 @@ export default function GameClientLayout() {
             <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 mb-4">
               <TabsTrigger value="garden" className="font-headline">Garden</TabsTrigger>
               <TabsTrigger value="automation" className="font-headline">Automation</TabsTrigger>
-              <TabsTrigger value="upgrades" className="font-headline">Upgrades</TabsTrigger> {/* New Tab */}
+              <TabsTrigger value="upgrades" className="font-headline">Upgrades</TabsTrigger>
               <TabsTrigger value="ai_advisor" className="font-headline">AI Advisor</TabsTrigger>
             </TabsList>
             <TabsContent value="garden">
@@ -84,7 +85,7 @@ export default function GameClientLayout() {
             <TabsContent value="automation">
               <AutomationStation />
             </TabsContent>
-            <TabsContent value="upgrades"> {/* New Tab Content */}
+            <TabsContent value="upgrades">
               <UpgradesPanel />
             </TabsContent>
             <TabsContent value="ai_advisor">
@@ -155,5 +156,3 @@ export default function GameClientLayout() {
     </SidebarProvider>
   );
 }
-
-    
