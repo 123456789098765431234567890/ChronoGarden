@@ -79,6 +79,9 @@ Provide 2-3 concise, actionable suggestions to help them optimize their garden i
 Focus on improving yield, resource management, efficiently using automations, suggesting new automations or upgrades they might want to build, or preparing for the next era if appropriate.
 Be specific and explain *why* your suggestions are beneficial, referencing specific game entities if helpful.
 Format your suggestions as a bulleted list (e.g., using '*' or '-').`,
+  config: {
+    temperature: 0.2, // Lower temperature for more deterministic and focused output
+  },
 });
 
 const analyzeCropsAndSuggestImprovementsFlow = ai.defineFlow(
