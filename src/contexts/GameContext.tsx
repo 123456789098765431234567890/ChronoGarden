@@ -4,11 +4,11 @@
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useReducer, Dispatch, useEffect } from 'react';
 import type { EraID, AutomationRule, Crop } from '@/config/gameConfig';
-import { ERAS, INITIAL_RESOURCES, GARDEN_PLOT_SIZE, ALL_CROPS_MAP, AUTOMATION_RULES_CONFIG, UPGRADES_CONFIG } from '@/config/gameConfig';
+import { ERAS, INITIAL_RESOURCES, GARDEN_PLOT_SIZE, ALL_CROPS_MAP, AUTOMATION_RULES_CONFIG, UPGRADES_CONFIG, ALL_GAME_RESOURCES_MAP } from '@/config/gameConfig';
 
 export interface PlantedCrop {
   cropId: string;
-  era: EraID;
+  era: EraID; // Era in which it was planted
   plantedAt: number;
   id: string;
 }
@@ -18,15 +18,17 @@ interface GameState {
   unlockedEras: EraID[];
   chronoEnergy: number;
   resources: Record<string, number>;
-  plotSlots: Array<PlantedCrop | null>; // Represents the 3x3 grid
+  plotSlots: Array<PlantedCrop | null>;
   automationRules: AutomationRule[];
-  activeAutomations: Record<string, boolean>; // To toggle automations on/off
+  activeAutomations: Record<string, boolean>;
   rareSeeds: string[]; // crop IDs
-  soilQuality: number; // 0-100, affects growth or yield
+  soilQuality: number;
   isLoadingAiSuggestion: boolean;
   aiSuggestion: string | null;
-  upgradeLevels: Record<string, number>; // upgradeId: level
+  upgradeLevels: Record<string, number>;
   lastTick: number;
+  lastUserInteractionTime: number; // For Glowshroom, or other idle mechanics
+  lastAutoPlantTime: number; // For rare seed auto-plant
 }
 
 const getInitialState = (): GameState => {
@@ -35,58 +37,60 @@ const getInitialState = (): GameState => {
     savedStateJson = localStorage.getItem('chronoGardenSave');
   }
   
-  if (savedStateJson) {
-    try {
-      const savedState = JSON.parse(savedStateJson);
-      // Ensure plotSlots is correctly initialized if missing from save
-      if (!savedState.plotSlots || savedState.plotSlots.length !== GARDEN_PLOT_SIZE) {
-        savedState.plotSlots = Array(GARDEN_PLOT_SIZE).fill(null);
-      }
-      // Ensure activeAutomations and upgradeLevels are initialized
-      savedState.activeAutomations = savedState.activeAutomations || {};
-      savedState.upgradeLevels = savedState.upgradeLevels || {};
-      // Ensure automationRules is an array if it was saved
-      savedState.automationRules = Array.isArray(savedState.automationRules) ? savedState.automationRules : [];
-
-      AUTOMATION_RULES_CONFIG.forEach(rule => {
-        if(savedState.activeAutomations[rule.id] === undefined && savedState.automationRules.find(r => r.id === rule.id)) {
-            savedState.activeAutomations[rule.id] = true; // Default to active if built
-        }
-      });
-      Object.keys(UPGRADES_CONFIG).forEach(upgradeId => {
-        if (savedState.upgradeLevels[upgradeId] === undefined) {
-          savedState.upgradeLevels[upgradeId] = 0;
-        }
-      });
-      savedState.lastTick = Date.now(); // Reset lastTick on load
-      return savedState;
-    } catch (e) {
-      console.error("Error loading saved game state:", e);
-      // Fall through to default initial state if parsing fails
-    }
-  }
-
-  const initialPlotSlots = Array(GARDEN_PLOT_SIZE).fill(null);
-  const initialUpgradeLevels = Object.keys(UPGRADES_CONFIG).reduce((acc, id) => {
-    acc[id] = 0;
-    return acc;
-  }, {} as Record<string, number>);
-
-  return {
+  const defaultState: GameState = {
     currentEra: 'Present',
     unlockedEras: ['Present'],
     chronoEnergy: 0,
     resources: { ...INITIAL_RESOURCES.reduce((acc, r) => ({...acc, [r.id]: r.initialAmount ?? 0}), {}) },
-    plotSlots: initialPlotSlots,
+    plotSlots: Array(GARDEN_PLOT_SIZE).fill(null),
     automationRules: [],
     activeAutomations: {},
     rareSeeds: [],
     soilQuality: 75,
     isLoadingAiSuggestion: false,
     aiSuggestion: null,
-    upgradeLevels: initialUpgradeLevels,
+    upgradeLevels: Object.keys(UPGRADES_CONFIG).reduce((acc, id) => { acc[id] = 0; return acc; }, {} as Record<string, number>),
     lastTick: Date.now(),
+    lastUserInteractionTime: Date.now(),
+    lastAutoPlantTime: Date.now(),
   };
+
+  if (savedStateJson) {
+    try {
+      const savedState = JSON.parse(savedStateJson) as Partial<GameState>;
+      
+      const mergedState = { ...defaultState, ...savedState };
+
+      // Ensure plotSlots is correctly initialized
+      if (!mergedState.plotSlots || mergedState.plotSlots.length !== GARDEN_PLOT_SIZE) {
+        mergedState.plotSlots = Array(GARDEN_PLOT_SIZE).fill(null);
+      }
+      // Ensure activeAutomations and upgradeLevels are initialized for all configs
+      mergedState.activeAutomations = mergedState.activeAutomations || {};
+      const builtRules = Array.isArray(mergedState.automationRules) ? mergedState.automationRules : [];
+      AUTOMATION_RULES_CONFIG.forEach(ruleConfig => {
+        if (mergedState.activeAutomations[ruleConfig.id] === undefined && builtRules.find(r => r.id === ruleConfig.id)) {
+            mergedState.activeAutomations[ruleConfig.id] = true; // Default to active if built
+        }
+      });
+      
+      mergedState.upgradeLevels = mergedState.upgradeLevels || {};
+      Object.keys(UPGRADES_CONFIG).forEach(upgradeId => {
+        if (mergedState.upgradeLevels[upgradeId] === undefined) {
+          mergedState.upgradeLevels[upgradeId] = 0;
+        }
+      });
+      
+      mergedState.lastTick = Date.now();
+      mergedState.lastUserInteractionTime = Date.now();
+      mergedState.lastAutoPlantTime = Date.now();
+
+      return mergedState as GameState;
+    } catch (e) {
+      console.error("Error loading saved game state:", e);
+    }
+  }
+  return defaultState;
 };
 
 
@@ -99,19 +103,30 @@ type GameAction =
   | { type: 'PLANT_CROP'; payload: { cropId: string; era: EraID; slotIndex: number } }
   | { type: 'HARVEST_CROP'; payload: { slotIndex: number } }
   | { type: 'ADD_AUTOMATION_RULE'; payload: AutomationRule }
-  | { type: 'REMOVE_AUTOMATION_RULE'; payload: string } // ruleId
+  | { type: 'REMOVE_AUTOMATION_RULE'; payload: string }
   | { type: 'TOGGLE_AUTOMATION'; payload: { ruleId: string; isActive: boolean } }
   | { type: 'PRESTIGE_RESET' }
   | { type: 'UPDATE_SOIL_QUALITY'; payload: number }
   | { type: 'SET_AI_LOADING'; payload: boolean }
   | { type: 'SET_AI_SUGGESTION'; payload: string | null }
-  | { type: 'PURCHASE_UPGRADE'; payload: string } // upgradeId
+  | { type: 'PURCHASE_UPGRADE'; payload: string }
   | { type: 'CLICK_WATER_BUTTON' }
+  | { type: 'USER_INTERACTION' } // New action to track user activity
   | { type: 'GAME_TICK' };
 
 
 const gameReducer = (state: GameState, action: GameAction): GameState => {
   let newState = { ...state };
+
+  // Update lastUserInteractionTime for relevant actions
+  if (action.type !== 'GAME_TICK' && action.type !== 'USER_INTERACTION') {
+    newState.lastUserInteractionTime = Date.now();
+  }
+  if (action.type === 'USER_INTERACTION') {
+    newState.lastUserInteractionTime = Date.now();
+    return newState; // Just update time, no other state change
+  }
+
 
   switch (action.type) {
     case 'SET_ERA':
@@ -120,9 +135,11 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       }
       break;
     case 'UNLOCK_ERA':
-      if (!state.unlockedEras.includes(action.payload) && state.chronoEnergy >= (ERAS[action.payload]?.unlockCost || 0) ) {
+      const eraToUnlockConfig = ERAS[action.payload];
+      if (eraToUnlockConfig && !state.unlockedEras.includes(action.payload) && state.chronoEnergy >= eraToUnlockConfig.unlockCost ) {
         newState.unlockedEras = [...state.unlockedEras, action.payload];
-        newState.chronoEnergy = state.chronoEnergy - (ERAS[action.payload]?.unlockCost || 0);
+        newState.chronoEnergy = state.chronoEnergy - eraToUnlockConfig.unlockCost;
+        // Toast can be dispatched from component after checking state change
       }
       break;
     case 'ADD_CHRONO_ENERGY':
@@ -138,21 +155,30 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       };
       break;
     case 'PLANT_CROP': {
-      const { cropId, era, slotIndex } = action.payload;
+      const { cropId, slotIndex } = action.payload; // era for planting is currentEra
       const cropConfig = ALL_CROPS_MAP[cropId];
-      if (!cropConfig || slotIndex < 0 || slotIndex >= GARDEN_PLOT_SIZE || state.plotSlots[slotIndex]) {
-        return state; // Invalid action
+      if (!cropConfig || slotIndex < 0 || slotIndex >= GARDEN_PLOT_SIZE || state.plotSlots[slotIndex] || cropConfig.era !== state.currentEra) {
+        return state; 
       }
 
       let costMultiplier = 1;
-      const cheaperCropsLevel = state.upgradeLevels['cheaperCrops'] || 0;
-      if (cheaperCropsLevel > 0) {
-        costMultiplier = UPGRADES_CONFIG['cheaperCrops'].effect(cheaperCropsLevel);
+      let waterCostMultiplier = 1;
+      const cheaperCropsUpgradeId = `cheaperCrops_${state.currentEra}`;
+      if (UPGRADES_CONFIG[cheaperCropsUpgradeId] && state.upgradeLevels[cheaperCropsUpgradeId] > 0) {
+          costMultiplier = UPGRADES_CONFIG[cheaperCropsUpgradeId].effect(state.upgradeLevels[cheaperCropsUpgradeId]);
       }
-
+      const dripIrrigationUpgradeId = `waterCost_${state.currentEra}`; // e.g. waterCost_Present
+      if (UPGRADES_CONFIG[dripIrrigationUpgradeId] && state.upgradeLevels[dripIrrigationUpgradeId] > 0){
+          waterCostMultiplier = UPGRADES_CONFIG[dripIrrigationUpgradeId].effect(state.upgradeLevels[dripIrrigationUpgradeId]);
+      }
+      
       const finalCosts = { ...cropConfig.cost };
       Object.keys(finalCosts).forEach(resId => {
-        finalCosts[resId] *= costMultiplier;
+        if (resId === "Water") {
+          finalCosts[resId] *= waterCostMultiplier;
+        }
+        finalCosts[resId] *= costMultiplier; 
+        finalCosts[resId] = Math.max(0, Math.round(finalCosts[resId]));
       });
       
       let canAfford = true;
@@ -169,11 +195,11 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
         });
 
         const newPlotSlots = [...state.plotSlots];
-        newPlotSlots[slotIndex] = { cropId, era, plantedAt: Date.now(), id: crypto.randomUUID() };
+        newPlotSlots[slotIndex] = { cropId, era: state.currentEra, plantedAt: Date.now(), id: crypto.randomUUID() };
         
         newState.resources = newResources;
         newState.plotSlots = newPlotSlots;
-        newState.soilQuality = Math.max(0, state.soilQuality - 0.5); // Slightly reduce soil quality
+        newState.soilQuality = Math.max(0, state.soilQuality - 0.5);
       }
       break;
     }
@@ -184,35 +210,66 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
 
       const cropConfig = ALL_CROPS_MAP[plantedCrop.cropId];
       if (!cropConfig) return state;
+      
+      // Ensure crop is mature before harvesting
+      let growthTime = cropConfig.growthTime;
+      const isRare = state.rareSeeds.includes(cropConfig.id);
+      if (isRare) growthTime *= 0.9; // Rare seed 10% faster growth
+
+      const cropGrowthUpgradeId = `cropGrowth_${plantedCrop.era}`; // e.g. cropGrowth_Present
+      if (UPGRADES_CONFIG[cropGrowthUpgradeId] && state.upgradeLevels[cropGrowthUpgradeId] > 0) {
+          growthTime *= UPGRADES_CONFIG[cropGrowthUpgradeId].effect(state.upgradeLevels[cropGrowthUpgradeId]);
+      }
+      if ((Date.now() - plantedCrop.plantedAt) / 1000 < growthTime) return state; // Not mature
+
 
       let yieldMultiplier = 1;
-      if (cropConfig.id === 'sunflower') {
-        const sunflowerBoostLevel = state.upgradeLevels['sunflowerBoost'] || 0;
-        if (sunflowerBoostLevel > 0) {
-          yieldMultiplier = UPGRADES_CONFIG['sunflowerBoost'].effect(sunflowerBoostLevel);
-        }
+      if (cropConfig.id === 'sunflower' && UPGRADES_CONFIG.sunflowerBoost && state.upgradeLevels.sunflowerBoost > 0) {
+          yieldMultiplier = UPGRADES_CONFIG.sunflowerBoost.effect(state.upgradeLevels.sunflowerBoost);
       }
-      
+      const prehistoricYieldBoostId = `yield_Prehistoric`;
+      if (cropConfig.era === "Prehistoric" && UPGRADES_CONFIG[prehistoricYieldBoostId] && state.upgradeLevels[prehistoricYieldBoostId] > 0) {
+          yieldMultiplier *= UPGRADES_CONFIG[prehistoricYieldBoostId].effect(state.upgradeLevels[prehistoricYieldBoostId]);
+      }
+
       const newResources = { ...state.resources };
       Object.entries(cropConfig.yield).forEach(([resourceId, amount]) => {
-        newResources[resourceId] = (newResources[resourceId] || 0) + (amount * yieldMultiplier);
+        let finalAmount = amount * yieldMultiplier;
+        if (isRare && (resourceId === 'Coins' || resourceId === 'Energy' || resourceId === 'Sunlight' || resourceId === 'ChronoEnergy')) {
+            finalAmount += 1; // Rare seed +1 yield to primary resources
+        }
+        newResources[resourceId] = (newResources[resourceId] || 0) + Math.round(finalAmount);
       });
+      
+      // Add ChronoEnergy based on era (already handled if in crop.yield)
+      // if (plantedCrop.era === "Prehistoric") {
+      //   newResources["ChronoEnergy"] = (newResources["ChronoEnergy"] || 0) + (cropConfig.yield.ChronoEnergy || 1); // Example ChronoEnergy gain
+      // }
+
+
+      // Rare seed drop: 1% chance
+      let rareSeedFoundThisHarvest = false;
+      if (Math.random() < 0.01 && !state.rareSeeds.includes(cropConfig.id)) {
+        newState.rareSeeds = [...state.rareSeeds, cropConfig.id];
+        rareSeedFoundThisHarvest = true; // For toast
+      }
 
       const newPlotSlots = [...state.plotSlots];
       newPlotSlots[slotIndex] = null;
 
       newState.resources = newResources;
       newState.plotSlots = newPlotSlots;
-      newState.chronoEnergy += 1; // Small ChronoEnergy gain on harvest
+      
+      // Dispatch toast from component based on rareSeedFoundThisHarvest
       break;
     }
     case 'ADD_AUTOMATION_RULE': {
       const ruleConfig = AUTOMATION_RULES_CONFIG.find(r => r.id === action.payload.id);
-      if (!ruleConfig || state.automationRules.find(r => r.id === ruleConfig.id)) return state; // Already exists or invalid
+      if (!ruleConfig || state.automationRules.find(r => r.id === ruleConfig.id)) return state; 
 
       newState.automationRules = [...state.automationRules, ruleConfig];
       newState.activeAutomations = {...state.activeAutomations, [ruleConfig.id]: true };
-      newState.soilQuality = Math.max(0, state.soilQuality - 1); // Automation might impact soil
+      newState.soilQuality = Math.max(0, state.soilQuality - 1); 
       break;
     }
     case 'REMOVE_AUTOMATION_RULE':
@@ -228,9 +285,10 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       };
       break;
     case 'PRESTIGE_RESET':
-      const initial = getInitialState(); // Get a fresh initial state
+      const initialForPrestige = getInitialState(); 
       newState = {
-        ...initial,
+        ...initialForPrestige,
+        chronoEnergy: state.chronoEnergy, // Keep ChronoEnergy
         rareSeeds: [...state.rareSeeds], 
         unlockedEras: ['Present'], 
       };
@@ -273,57 +331,113 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
     case 'CLICK_WATER_BUTTON':
       newState.resources = {
         ...state.resources,
-        Water: (state.resources.Water || 0) + 10, // Add 10 water on click
+        Water: (state.resources.Water || 0) + 10,
       };
       break;
     case 'GAME_TICK': {
       const now = Date.now();
-      const elapsedSeconds = (now - state.lastTick) / 1000;
-
-      // 1. Auto-generate Sunlight (e.g., 1 Sunlight per 5 seconds)
-      if (elapsedSeconds >= 5) { // This logic is simplified, assumes tick is roughly every 5s for this
-         newState.resources = { ...newState.resources, Sunlight: (newState.resources.Sunlight || 0) + 1 };
+      // Passive Sunlight Generation
+      let passiveSunlightBonus = 0;
+      const solarPanelUpgradeId = 'solarPanels';
+      if (UPGRADES_CONFIG[solarPanelUpgradeId] && state.upgradeLevels[solarPanelUpgradeId] > 0 && state.currentEra === "Present") {
+          passiveSunlightBonus = UPGRADES_CONFIG[solarPanelUpgradeId].effect(state.upgradeLevels[solarPanelUpgradeId]);
+      }
+      if (Math.floor(now / 5000) > Math.floor(state.lastTick / 5000)) { // Every 5 seconds
+         newState.resources = { ...newState.resources, Sunlight: (newState.resources.Sunlight || 0) + 1 + passiveSunlightBonus };
       }
 
-      // 2. Apply Sprinkler effect (if active and built)
-      const sprinklerRule = state.automationRules.find(r => r.id === 'sprinkler');
-      if (sprinklerRule && state.activeAutomations['sprinkler']) {
-         // Generates 1 Water every 10 seconds. Game tick is 1s, so check interval.
-         if (Math.floor(now / 10000) > Math.floor(state.lastTick / 10000)) {
-             newState.resources = { ...newState.resources, Water: (newState.resources.Water || 0) + 1 };
-         }
-      }
-
-      // 3. Apply AutoHarvester effect (if active and built)
-      const autoHarvesterRule = state.automationRules.find(r => r.id === 'autoharvester');
-      if (autoHarvesterRule && state.activeAutomations['autoharvester']) {
-        // Harvests one random mature crop every 15 seconds. Check interval.
-        if (Math.floor(now / 15000) > Math.floor(state.lastTick / 15000)) {
-            const matureSlots: number[] = [];
-            state.plotSlots.forEach((slot, index) => {
-                if (slot) {
-                    const cropCfg = ALL_CROPS_MAP[slot.cropId];
-                    let growthTime = cropCfg.growthTime;
-                    const fasterGrowthLevel = state.upgradeLevels['fasterGrowth'] || 0;
-                    if (fasterGrowthLevel > 0) {
-                        growthTime *= UPGRADES_CONFIG['fasterGrowth'].effect(fasterGrowthLevel);
+      // Automation Effects
+      state.automationRules.forEach(rule => {
+        if (state.activeAutomations[rule.id] && rule.era === state.currentEra) {
+          switch (rule.id) {
+            case 'sprinkler': // Basic Sprinkler (Present)
+              if (Math.floor(now / 10000) > Math.floor(state.lastTick / 10000)) { // Every 10s
+                 newState.resources = { ...newState.resources, Water: (newState.resources.Water || 0) + 1 };
+              }
+              break;
+            case 'autoharvester': // Basic AutoHarvester (Present)
+              if (Math.floor(now / 15000) > Math.floor(state.lastTick / 15000)) { // Every 15s
+                const presentMatureSlots: number[] = [];
+                state.plotSlots.forEach((slot, index) => {
+                    if (slot && slot.era === "Present") {
+                        const cropCfg = ALL_CROPS_MAP[slot.cropId];
+                        let gTime = cropCfg.growthTime;
+                        if (state.rareSeeds.includes(slot.cropId)) gTime *= 0.9;
+                        const growthUpgrade = `cropGrowth_Present`;
+                        if(UPGRADES_CONFIG[growthUpgrade] && state.upgradeLevels[growthUpgrade] > 0) {
+                            gTime *= UPGRADES_CONFIG[growthUpgrade].effect(state.upgradeLevels[growthUpgrade]);
+                        }
+                        if ((now - slot.plantedAt) / 1000 >= gTime) presentMatureSlots.push(index);
                     }
-                    if ((now - slot.plantedAt) / 1000 >= growthTime) {
-                        matureSlots.push(index);
+                });
+                if (presentMatureSlots.length > 0) {
+                    const randIdx = presentMatureSlots[Math.floor(Math.random() * presentMatureSlots.length)];
+                    newState = gameReducer(newState, { type: 'HARVEST_CROP', payload: { slotIndex: randIdx }});
+                }
+              }
+              break;
+            case 'raptorharvester': // Prehistoric
+              if (Math.floor(now / 10000) > Math.floor(state.lastTick / 10000)) { // Every 10s
+                const prehistoricMatureSlots: number[] = [];
+                state.plotSlots.forEach((slot, index) => {
+                    if (slot && slot.era === "Prehistoric") {
+                        const cropCfg = ALL_CROPS_MAP[slot.cropId];
+                        let gTime = cropCfg.growthTime;
+                         if (state.rareSeeds.includes(slot.cropId)) gTime *= 0.9;
+                        const growthUpgrade = `cropGrowth_Prehistoric`;
+                         if(UPGRADES_CONFIG[growthUpgrade] && state.upgradeLevels[growthUpgrade] > 0) {
+                            gTime *= UPGRADES_CONFIG[growthUpgrade].effect(state.upgradeLevels[growthUpgrade]);
+                        }
+                        if ((now - slot.plantedAt) / 1000 >= gTime) prehistoricMatureSlots.push(index);
+                    }
+                });
+                if (prehistoricMatureSlots.length > 0) {
+                    const randIdx = prehistoricMatureSlots[Math.floor(Math.random() * prehistoricMatureSlots.length)];
+                    newState = gameReducer(newState, { type: 'HARVEST_CROP', payload: { slotIndex: randIdx }});
+                }
+                // 5% chance to uproot a young plant
+                if (Math.random() < 0.05) {
+                    const youngPlantsIndexes = state.plotSlots.map((s, i) => s && s.era === "Prehistoric" ? i : -1).filter(i => i !== -1);
+                    if (youngPlantsIndexes.length > 0) {
+                        const unluckyIndex = youngPlantsIndexes[Math.floor(Math.random() * youngPlantsIndexes.length)];
+                        newState.plotSlots = [...newState.plotSlots];
+                        newState.plotSlots[unluckyIndex] = null;
+                        // Could add a toast for this
                     }
                 }
-            });
-
-            if (matureSlots.length > 0) {
-                const randomMatureSlotIndex = matureSlots[Math.floor(Math.random() * matureSlots.length)];
-                // Create a temporary state to apply harvest logic from reducer
-                const tempStateForHarvest = gameReducer(newState, { type: 'HARVEST_CROP', payload: { slotIndex: randomMatureSlotIndex } });
-                newState.resources = tempStateForHarvest.resources;
-                newState.plotSlots = tempStateForHarvest.plotSlots;
-                newState.chronoEnergy = tempStateForHarvest.chronoEnergy;
-            }
+              }
+              break;
+            case 'tarpitsprinkler': // Prehistoric
+              if (Math.floor(now / 20000) > Math.floor(state.lastTick / 20000)) { // Every 20s
+                 newState.resources = { 
+                     ...newState.resources, 
+                     Water: (newState.resources.Water || 0) + 2,
+                     MysticSpores: (newState.resources.MysticSpores || 0) + 1,
+                    };
+              }
+              break;
+          }
+        }
+      });
+      
+      // Rare Seed Auto-Plant (every 30 seconds)
+      if (state.rareSeeds.length > 0 && (now - state.lastAutoPlantTime) / 1000 >= 30) {
+        const emptyPlotIndexes = state.plotSlots.map((slot, index) => slot === null ? index : -1).filter(index => index !== -1);
+        if (emptyPlotIndexes.length > 0) {
+          const randomRareSeedId = state.rareSeeds[Math.floor(Math.random() * state.rareSeeds.length)];
+          const cropToPlant = ALL_CROPS_MAP[randomRareSeedId];
+          // Check if crop is for current era and can be afforded (simplified cost check for auto-plant)
+          if (cropToPlant && cropToPlant.era === state.currentEra) {
+            // Simplified cost check: assume free or very low cost for auto-plant, or implement full cost check
+            // For Phase 2, let's assume it plants if a slot is free, without cost check.
+            const randomEmptySlot = emptyPlotIndexes[Math.floor(Math.random() * emptyPlotIndexes.length)];
+            newState = gameReducer(newState, {type: 'PLANT_CROP', payload: {cropId: randomRareSeedId, era: state.currentEra, slotIndex: randomEmptySlot }});
+            newState.lastAutoPlantTime = now; 
+          }
         }
       }
+
+
       newState.lastTick = now;
       break;
     }
@@ -352,9 +466,19 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const tickInterval = setInterval(() => {
       dispatch({ type: 'GAME_TICK' });
-    }, 1000); // Game tick every 1 second
+    }, 1000); 
 
-    return () => clearInterval(tickInterval);
+    const userActivityListener = () => dispatch({ type: 'USER_INTERACTION' });
+    window.addEventListener('mousemove', userActivityListener);
+    window.addEventListener('click', userActivityListener);
+    window.addEventListener('keypress', userActivityListener);
+
+    return () => {
+      clearInterval(tickInterval);
+      window.removeEventListener('mousemove', userActivityListener);
+      window.removeEventListener('click', userActivityListener);
+      window.removeEventListener('keypress', userActivityListener);
+    };
   }, []);
 
 

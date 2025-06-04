@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGame } from '@/contexts/GameContext';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,11 +17,22 @@ import { Switch } from '@/components/ui/switch';
 export default function AutomationStation() {
   const { state, dispatch } = useGame();
   const { toast } = useToast();
-  // Filter out legacy rules for selection if they are still in config
-  const availableRulesToBuild = AUTOMATION_RULES_CONFIG.filter(r => !r.id.includes("_legacy"));
-  const [selectedRuleId, setSelectedRuleId] = useState<string>(availableRulesToBuild[0]?.id || "");
+  
+  const availableRulesToBuildInCurrentEra = AUTOMATION_RULES_CONFIG.filter(r => r.era === state.currentEra && !r.id.includes("_legacy"));
+  const [selectedRuleId, setSelectedRuleId] = useState<string>("");
+
+  useEffect(() => {
+    const rulesForEra = AUTOMATION_RULES_CONFIG.filter(r => r.era === state.currentEra && !r.id.includes("_legacy"));
+    if (rulesForEra.length > 0 && !rulesForEra.find(r => r.id === selectedRuleId)) {
+      setSelectedRuleId(rulesForEra[0].id);
+    } else if (rulesForEra.length === 0) {
+      setSelectedRuleId("");
+    }
+  }, [state.currentEra, selectedRuleId]);
+
 
   const handleAddAutomation = () => {
+    dispatch({ type: 'USER_INTERACTION' });
     const ruleConfig = AUTOMATION_RULES_CONFIG.find(r => r.id === selectedRuleId);
     if (!ruleConfig) return;
 
@@ -47,10 +58,11 @@ export default function AutomationStation() {
     });
 
     dispatch({ type: 'ADD_AUTOMATION_RULE', payload: ruleConfig });
-    toast({ title: "Automation Built!", description: `${ruleConfig.name} is now active.` });
+    toast({ title: "Automation Built!", description: `${ruleConfig.name} is now active in ${state.currentEra} era.` });
   };
 
   const handleRemoveAutomation = (ruleId: string) => {
+    dispatch({ type: 'USER_INTERACTION' });
     const rule = state.automationRules.find(r => r.id === ruleId);
     if (rule) {
         dispatch({ type: 'REMOVE_AUTOMATION_RULE', payload: ruleId });
@@ -59,69 +71,80 @@ export default function AutomationStation() {
   };
 
   const handleToggleAutomation = (ruleId: string, isActive: boolean) => {
+    dispatch({ type: 'USER_INTERACTION' });
     dispatch({ type: 'TOGGLE_AUTOMATION', payload: { ruleId, isActive } });
     const ruleName = state.automationRules.find(r => r.id === ruleId)?.name || "Automation";
     toast({ title: `${ruleName} ${isActive ? 'Activated' : 'Deactivated'}`});
   };
   
   const selectedRuleDetails = AUTOMATION_RULES_CONFIG.find(r => r.id === selectedRuleId);
+  const builtAutomationsInCurrentEra = state.automationRules.filter(rule => rule.era === state.currentEra);
 
   return (
     <Card className="shadow-lg">
       <CardHeader>
         <CardTitle className="font-headline text-2xl flex items-center">
           <Settings2 className="w-6 h-6 mr-2 text-primary" />
-          Automation Station
+          Automation Station ({state.currentEra})
         </CardTitle>
         <CardDescription>
-          Design and implement automated systems. Built automations can be toggled on/off.
-          Active automations may affect soil quality or have running costs (future).
+          Design and implement automated systems for the {state.currentEra} era.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="grid md:grid-cols-2 gap-6">
           <div>
             <h3 className="font-headline text-lg mb-2">Build New Automation</h3>
-            <div className="space-y-4 p-4 border rounded-lg bg-muted/20">
-              <div>
-                <Label htmlFor="automation-type" className="font-semibold">Automation Type</Label>
-                <Select value={selectedRuleId} onValueChange={setSelectedRuleId}>
-                  <SelectTrigger id="automation-type">
-                    <SelectValue placeholder="Select automation rule" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableRulesToBuild.map(rule => (
-                      <SelectItem key={rule.id} value={rule.id} disabled={!!state.automationRules.find(r => r.id === rule.id)}>
-                        {rule.name} {state.automationRules.find(r => r.id === rule.id) ? "(Built)" : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {selectedRuleDetails && (
-                  <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
-                    <p>{selectedRuleDetails.description}</p>
-                    <p>Cost: {Object.entries(selectedRuleDetails.cost)
-                        .map(([res,amt]) => `${amt} ${ALL_GAME_RESOURCES_MAP[res]?.name || res}`)
-                        .join(', ')}
-                    </p>
-                  </div>
-                )}
+            {availableRulesToBuildInCurrentEra.length > 0 ? (
+              <div className="space-y-4 p-4 border rounded-lg bg-muted/20">
+                <div>
+                  <Label htmlFor="automation-type" className="font-semibold">Automation Type</Label>
+                  <Select value={selectedRuleId} onValueChange={setSelectedRuleId}>
+                    <SelectTrigger id="automation-type">
+                      <SelectValue placeholder="Select automation rule" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableRulesToBuildInCurrentEra.map(rule => (
+                        <SelectItem key={rule.id} value={rule.id} disabled={!!state.automationRules.find(r => r.id === rule.id)}>
+                          {rule.name} {state.automationRules.find(r => r.id === rule.id) ? "(Built)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedRuleDetails && (
+                    <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+                      <p>{selectedRuleDetails.description}</p>
+                      <p>Cost: {Object.entries(selectedRuleDetails.cost)
+                          .map(([res,amt]) => `${amt} ${ALL_GAME_RESOURCES_MAP[res]?.name || res}`)
+                          .join(', ')}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <Button 
+                  onClick={handleAddAutomation} 
+                  disabled={!selectedRuleId || !!state.automationRules.find(r => r.id === selectedRuleId)} 
+                  className="w-full"
+                >
+                  <PlusCircle className="w-4 h-4 mr-2" /> Build Automation
+                </Button>
               </div>
-              <Button 
-                onClick={handleAddAutomation} 
-                disabled={!selectedRuleId || !!state.automationRules.find(r => r.id === selectedRuleId)} 
-                className="w-full"
-              >
-                <PlusCircle className="w-4 h-4 mr-2" /> Build Automation
-              </Button>
-            </div>
+            ) : (
+                 <Alert>
+                    <Bot className="h-4 w-4" />
+                    <AlertTitle>No New Automations</AlertTitle>
+                    <AlertDescription>
+                    There are no new automations to build in the {state.currentEra} era with your current technology.
+                    </AlertDescription>
+                </Alert>
+            )}
           </div>
 
           <div>
-            <h3 className="font-headline text-lg mb-2">Manage Automations</h3>
-            {state.automationRules.length > 0 ? (
+            <h3 className="font-headline text-lg mb-2">Manage Automations ({state.currentEra})</h3>
+            {builtAutomationsInCurrentEra.length > 0 ? (
               <ul className="space-y-2 max-h-96 overflow-y-auto p-1">
-                {state.automationRules.map((rule) => (
+                {builtAutomationsInCurrentEra.map((rule) => (
                   <li key={rule.id} className="flex items-center justify-between p-3 border rounded-lg bg-card hover:bg-muted/50 transition-colors">
                     <div className="flex-grow">
                       <p className="font-semibold flex items-center">
@@ -148,7 +171,7 @@ export default function AutomationStation() {
                 <Bot className="h-4 w-4" />
                 <AlertTitle>No Automations Built</AlertTitle>
                 <AlertDescription>
-                  Build automations to help manage your garden more efficiently.
+                  Build automations for the {state.currentEra} era to help manage your garden.
                 </AlertDescription>
               </Alert>
             )}
@@ -156,7 +179,7 @@ export default function AutomationStation() {
         </div>
       </CardContent>
        <CardFooter className="text-sm text-muted-foreground">
-        Note: Implementing automations might reduce soil quality over time. Balance efficiency with ecological care.
+        Note: Active automations might affect soil quality or have other subtle effects.
       </CardFooter>
     </Card>
   );

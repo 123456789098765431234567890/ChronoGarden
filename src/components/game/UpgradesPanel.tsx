@@ -6,15 +6,17 @@ import { useGame } from '@/contexts/GameContext';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { UPGRADES_CONFIG, UpgradeConfig, ALL_GAME_RESOURCES_MAP } from '@/config/gameConfig';
-import { TrendingUp, Zap, Coins as CoinsIcon, Power, CheckCircle } from 'lucide-react'; // Added CoinsIcon
+import { TrendingUp, CheckCircle } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export default function UpgradesPanel() {
   const { state, dispatch } = useGame();
   const { toast } = useToast();
 
   const handlePurchaseUpgrade = (upgradeId: string) => {
+    dispatch({ type: 'USER_INTERACTION' });
     const upgrade = UPGRADES_CONFIG[upgradeId];
     const currentLevel = state.upgradeLevels[upgradeId] || 0;
     if (currentLevel >= upgrade.maxLevel) {
@@ -37,20 +39,22 @@ export default function UpgradesPanel() {
       toast({ title: "Cannot Afford Upgrade", description: `Not enough resources for ${upgrade.name}.`, variant: "destructive" });
     }
   };
+  
+  const availableUpgradesInCurrentEra = Object.values(UPGRADES_CONFIG).filter(upg => upg.era === state.currentEra);
 
   return (
     <Card className="shadow-lg">
       <CardHeader>
         <CardTitle className="font-headline text-2xl flex items-center">
           <TrendingUp className="w-6 h-6 mr-2 text-primary" />
-          Garden Upgrades
+          {state.currentEra} Era Upgrades
         </CardTitle>
         <CardDescription>
-          Invest your resources to improve your garden's efficiency and output.
+          Invest resources to improve your garden's efficiency in the {state.currentEra} era.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {Object.values(UPGRADES_CONFIG).map((upgrade: UpgradeConfig) => {
+        {availableUpgradesInCurrentEra.length > 0 ? availableUpgradesInCurrentEra.map((upgrade: UpgradeConfig) => {
           const currentLevel = state.upgradeLevels[upgrade.id] || 0;
           const isMaxLevel = currentLevel >= upgrade.maxLevel;
           const costForNextLevel = isMaxLevel ? {} : upgrade.cost(currentLevel);
@@ -82,7 +86,7 @@ export default function UpgradesPanel() {
                   <p className="text-xs mb-1">Cost for Level {currentLevel + 1}:</p>
                   <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs mb-3">
                     {Object.entries(costForNextLevel).map(([resourceId, amount]) => {
-                      const ResIcon = ALL_GAME_RESOURCES_MAP[resourceId]?.icon || Power;
+                      const ResIcon = ALL_GAME_RESOURCES_MAP[resourceId]?.icon || TrendingUp; // Fallback icon
                       return (
                         <span key={resourceId} className="flex items-center">
                           <ResIcon className="w-3 h-3 mr-1" /> {Math.ceil(amount)} {ALL_GAME_RESOURCES_MAP[resourceId]?.name || resourceId}
@@ -105,10 +109,18 @@ export default function UpgradesPanel() {
               )}
             </Card>
           );
-        })}
+        }) : (
+            <Alert>
+                <TrendingUp className="h-4 w-4" />
+                <AlertTitle>No Upgrades Available</AlertTitle>
+                <AlertDescription>
+                    There are no specific upgrades for the {state.currentEra} era at this time. Check back later or explore other eras!
+                </AlertDescription>
+            </Alert>
+        )}
       </CardContent>
       <CardFooter className="text-sm text-muted-foreground">
-        Upgrades are permanent and will help you progress faster through the eras.
+        Upgrades are permanent for their respective eras and help you progress.
       </CardFooter>
     </Card>
   );
