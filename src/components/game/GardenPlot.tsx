@@ -6,7 +6,7 @@ import { useGame } from '@/contexts/GameContext';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from "@/components/ui/progress";
-import { ERAS, ALL_CROPS_MAP, Crop, GARDEN_PLOT_SIZE, UPGRADES_CONFIG } from '@/config/gameConfig';
+import { ERAS, ALL_CROPS_MAP, Crop, GARDEN_PLOT_SIZE, UPGRADES_CONFIG, ALL_GAME_RESOURCES_MAP } from '@/config/gameConfig';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Sprout, Clock, PlusCircle, Trash2, CheckCircle, MinusCircle } from 'lucide-react';
 import Image from 'next/image';
@@ -53,15 +53,6 @@ export default function GardenPlot() {
     // For now, just directly modifying plotSlots if it's empty or we want to "uproot"
     // This action doesn't exist yet, needs careful consideration if plants have value before maturity
     // For Phase 1, let's make the Trash2 icon on growing plants do this.
-    const newPlotSlots = [...state.plotSlots];
-    newPlotSlots[slotIndex] = null;
-    // This is a direct state manipulation, not ideal.
-    // A 'CLEAR_PLOT_SLOT' action would be better.
-    // For now, we'll use harvest for simplicity of removing, even if not mature.
-    // The provided spec implies harvesting is for mature crops.
-    // Let's add a specific "uproot" that doesn't give yield if not mature.
-    // For now, let's just let harvest handle removal, it will give 0 if not mature.
-    // The existing harvest implies maturity. Let's make Trash2 an "uproot" if not mature.
     const plantedCrop = state.plotSlots[slotIndex];
     if (plantedCrop) {
         const cropConfig = ALL_CROPS_MAP[plantedCrop.cropId];
