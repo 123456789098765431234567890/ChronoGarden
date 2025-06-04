@@ -42,85 +42,34 @@ interface GameState {
   };
 }
 
-const getInitialState = (): GameState => {
-  let savedStateJson = null;
-  if (typeof window !== 'undefined') {
-    savedStateJson = localStorage.getItem('chronoGardenSave');
-  }
-  
-  const defaultState: GameState = {
-    currentEra: 'Present',
-    unlockedEras: ['Present'],
-    chronoEnergy: 0,
-    resources: { ...INITIAL_RESOURCES.reduce((acc, r) => ({...acc, [r.id]: r.initialAmount ?? 0}), {}) },
-    plotSlots: Array(GARDEN_PLOT_SIZE).fill(null),
-    automationRules: [],
-    activeAutomations: {},
-    rareSeeds: [],
-    soilQuality: 75,
-    isLoadingAiSuggestion: false,
-    aiSuggestion: null,
-    upgradeLevels: Object.keys(UPGRADES_CONFIG).reduce((acc, id) => { acc[id] = 0; return acc; }, {} as Record<string, number>),
-    lastTick: Date.now(),
-    lastUserInteractionTime: Date.now(),
-    lastAutoPlantTime: Date.now(),
-    prestigeCount: 0,
-    permanentUpgradeLevels: Object.keys(PERMANENT_UPGRADES_CONFIG).reduce((acc, id) => { acc[id] = 0; return acc; }, {} as Record<string, number>),
-    synergyStats: {
-      cropsHarvestedPresent: 0,
-      cropsHarvestedPrehistoric: 0,
-      cropsHarvestedFuture: 0,
-    },
-  };
-
-  if (savedStateJson) {
-    try {
-      const savedState = JSON.parse(savedStateJson) as Partial<GameState>;
-      const mergedState = { ...defaultState, ...savedState };
-
-      // Ensure complex objects are well-formed
-      mergedState.resources = { ...defaultState.resources, ...savedState.resources };
-      mergedState.plotSlots = Array.isArray(savedState.plotSlots) && savedState.plotSlots.length === GARDEN_PLOT_SIZE ? savedState.plotSlots : Array(GARDEN_PLOT_SIZE).fill(null);
-      mergedState.automationRules = Array.isArray(savedState.automationRules) ? savedState.automationRules : [];
-      mergedState.rareSeeds = Array.isArray(savedState.rareSeeds) ? savedState.rareSeeds : [];
-      
-      mergedState.activeAutomations = savedState.activeAutomations || {};
-      mergedState.automationRules.forEach(ruleConfig => { // Ensure activeAutomations has entries for all built rules
-        if (mergedState.activeAutomations[ruleConfig.id] === undefined) {
-            mergedState.activeAutomations[ruleConfig.id] = true; 
-        }
-      });
-      
-      mergedState.upgradeLevels = { ...defaultState.upgradeLevels, ...savedState.upgradeLevels };
-      mergedState.permanentUpgradeLevels = { ...defaultState.permanentUpgradeLevels, ...savedState.permanentUpgradeLevels };
-      mergedState.synergyStats = { ...defaultState.synergyStats, ...savedState.synergyStats };
-
-      mergedState.lastTick = Date.now();
-      mergedState.lastUserInteractionTime = Date.now();
-      mergedState.lastAutoPlantTime = Date.now();
-      mergedState.prestigeCount = savedState.prestigeCount || 0;
-      
-      // If permStartWithAutoHarvestPresent is purchased, ensure the automation is added if not already
-      const permStartHarvestId = 'permStartWithAutoHarvestPresent';
-      if (mergedState.permanentUpgradeLevels[permStartHarvestId] > 0) {
-          const presentAutoHarvestConfig = AUTOMATION_RULES_CONFIG.find(r => r.id === 'autoharvester_present');
-          if (presentAutoHarvestConfig && !mergedState.automationRules.find(r => r.id === presentAutoHarvestConfig.id)) {
-              mergedState.automationRules.push(presentAutoHarvestConfig);
-              mergedState.activeAutomations[presentAutoHarvestConfig.id] = true;
-          }
-      }
-
-
-      return mergedState as GameState;
-    } catch (e) {
-      console.error("Error loading saved game state:", e);
-    }
-  }
-  return defaultState;
-};
+const createDefaultState = (): GameState => ({
+  currentEra: 'Present',
+  unlockedEras: ['Present'],
+  chronoEnergy: 0,
+  resources: { ...INITIAL_RESOURCES.reduce((acc, r) => ({...acc, [r.id]: r.initialAmount ?? 0}), {}) },
+  plotSlots: Array(GARDEN_PLOT_SIZE).fill(null),
+  automationRules: [],
+  activeAutomations: {},
+  rareSeeds: [],
+  soilQuality: 75,
+  isLoadingAiSuggestion: false,
+  aiSuggestion: null,
+  upgradeLevels: Object.keys(UPGRADES_CONFIG).reduce((acc, id) => { acc[id] = 0; return acc; }, {} as Record<string, number>),
+  lastTick: 0, // Initialized to 0 for server/client consistency
+  lastUserInteractionTime: 0, 
+  lastAutoPlantTime: 0,
+  prestigeCount: 0,
+  permanentUpgradeLevels: Object.keys(PERMANENT_UPGRADES_CONFIG).reduce((acc, id) => { acc[id] = 0; return acc; }, {} as Record<string, number>),
+  synergyStats: {
+    cropsHarvestedPresent: 0,
+    cropsHarvestedPrehistoric: 0,
+    cropsHarvestedFuture: 0,
+  },
+});
 
 
 type GameAction =
+  | { type: 'LOAD_STATE_FROM_STORAGE'; payload: GameState }
   | { type: 'SET_ERA'; payload: EraID }
   | { type: 'UNLOCK_ERA'; payload: EraID }
   | { type: 'ADD_CHRONO_ENERGY'; payload: number }
@@ -145,7 +94,7 @@ type GameAction =
 const gameReducer = (state: GameState, action: GameAction): GameState => {
   let newState = { ...state };
 
-  if (action.type !== 'GAME_TICK' && action.type !== 'USER_INTERACTION') {
+  if (action.type !== 'GAME_TICK' && action.type !== 'USER_INTERACTION' && action.type !== 'LOAD_STATE_FROM_STORAGE') {
     newState.lastUserInteractionTime = Date.now();
   }
   if (action.type === 'USER_INTERACTION') {
@@ -154,6 +103,8 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
   }
 
   switch (action.type) {
+    case 'LOAD_STATE_FROM_STORAGE':
+      return action.payload;
     case 'SET_ERA':
       if (state.unlockedEras.includes(action.payload)) {
         newState.currentEra = action.payload;
@@ -337,14 +288,17 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       };
       break;
     case 'PRESTIGE_RESET':
-      const initialForPrestige = getInitialState(); 
+      const defaultForPrestige = createDefaultState(); 
       newState = {
-        ...initialForPrestige, // Resets resources, plot, era upgrades, synergy stats, active automations
+        ...defaultForPrestige, 
         chronoEnergy: state.chronoEnergy, 
         rareSeeds: [...state.rareSeeds], 
         unlockedEras: ['Present'], 
         prestigeCount: state.prestigeCount + 1,
         permanentUpgradeLevels: { ...state.permanentUpgradeLevels },
+        lastTick: Date.now(), // Reset timestamps for new session
+        lastUserInteractionTime: Date.now(),
+        lastAutoPlantTime: Date.now(),
       };
       // Re-apply "start with autoharvest" if purchased
       if (newState.permanentUpgradeLevels.permStartWithAutoHarvestPresent > 0) {
@@ -425,6 +379,10 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       };
       break;
     case 'GAME_TICK': {
+      // Prevent tick processing if lastTick is 0 (initial default state before client hydration/load)
+      if (state.lastTick === 0) {
+        return { ...state, lastTick: Date.now() }; // Set lastTick to prevent immediate re-trigger
+      }
       const now = Date.now();
       const newResources = { ...newState.resources };
 
@@ -574,26 +532,93 @@ interface GameContextProps {
 const GameContext = createContext<GameContextProps | undefined>(undefined);
 
 export const GameProvider = ({ children }: { children: ReactNode }) => {
-  const [state, dispatch] = useReducer(gameReducer, getInitialState());
+  const [state, dispatch] = useReducer(gameReducer, createDefaultState());
 
+  // Load state from localStorage on initial client mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      const savedStateJson = localStorage.getItem('chronoGardenSave');
+      if (savedStateJson) {
+        try {
+          const savedState = JSON.parse(savedStateJson) as Partial<GameState>;
+          const defaultState = createDefaultState();
+          
+          // Deep merge to handle new properties and ensure all defaults are present
+          const mergedState: GameState = {
+            ...defaultState,
+            ...savedState,
+            resources: { ...defaultState.resources, ...savedState.resources },
+            plotSlots: Array.isArray(savedState.plotSlots) && savedState.plotSlots.length === GARDEN_PLOT_SIZE 
+              ? savedState.plotSlots 
+              : Array(GARDEN_PLOT_SIZE).fill(null),
+            automationRules: Array.isArray(savedState.automationRules) ? savedState.automationRules : [],
+            activeAutomations: savedState.activeAutomations || {},
+            rareSeeds: Array.isArray(savedState.rareSeeds) ? savedState.rareSeeds : [],
+            upgradeLevels: { ...defaultState.upgradeLevels, ...savedState.upgradeLevels },
+            permanentUpgradeLevels: { ...defaultState.permanentUpgradeLevels, ...savedState.permanentUpgradeLevels },
+            synergyStats: { ...defaultState.synergyStats, ...savedState.synergyStats },
+            lastTick: Date.now(), // Reset timestamps for current session
+            lastUserInteractionTime: Date.now(),
+            lastAutoPlantTime: Date.now(),
+            prestigeCount: savedState.prestigeCount || 0,
+          };
+
+          // Ensure activeAutomations has entries for all built rules from saved state
+          mergedState.automationRules.forEach(ruleConfig => {
+            if (mergedState.activeAutomations[ruleConfig.id] === undefined) {
+                mergedState.activeAutomations[ruleConfig.id] = true; 
+            }
+          });
+          
+          // Re-apply permStartWithAutoHarvestPresent if purchased
+          if (mergedState.permanentUpgradeLevels.permStartWithAutoHarvestPresent > 0) {
+              const presentAutoHarvestConfig = AUTOMATION_RULES_CONFIG.find(r => r.id === 'autoharvester_present');
+              if (presentAutoHarvestConfig && !mergedState.automationRules.find(r => r.id === presentAutoHarvestConfig.id)) {
+                  mergedState.automationRules.push(presentAutoHarvestConfig);
+                  mergedState.activeAutomations[presentAutoHarvestConfig.id] = true;
+              }
+          }
+
+          dispatch({ type: 'LOAD_STATE_FROM_STORAGE', payload: mergedState });
+        } catch (e) {
+          console.error("Error loading saved game state:", e);
+          // Fallback to default if loading fails
+          dispatch({ type: 'LOAD_STATE_FROM_STORAGE', payload: { ...createDefaultState(), lastTick: Date.now(), lastUserInteractionTime: Date.now(), lastAutoPlantTime: Date.now() } });
+        }
+      } else {
+         // If no saved state, initialize timestamps for the new session
+         dispatch({ type: 'LOAD_STATE_FROM_STORAGE', payload: { ...createDefaultState(), lastTick: Date.now(), lastUserInteractionTime: Date.now(), lastAutoPlantTime: Date.now() } });
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Runs once on mount
+
+  // Save state to localStorage whenever it changes (but not on initial default render)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && state.lastTick !== 0) { // Only save if state is initialized
       localStorage.setItem('chronoGardenSave', JSON.stringify(state));
     }
   }, [state]);
 
+  // Game tick interval
   useEffect(() => {
+    if (state.lastTick === 0) return; // Don't start tick if state is not initialized
+
     const tickInterval = setInterval(() => {
       dispatch({ type: 'GAME_TICK' });
     }, 1000); 
 
+    return () => clearInterval(tickInterval);
+  }, [state.lastTick]); // Depend on lastTick to re-init interval if it changes drastically (e.g. load)
+
+  // User activity listener
+  useEffect(() => {
     const userActivityListener = () => dispatch({ type: 'USER_INTERACTION' });
     window.addEventListener('mousemove', userActivityListener);
     window.addEventListener('click', userActivityListener);
     window.addEventListener('keypress', userActivityListener);
 
     return () => {
-      clearInterval(tickInterval);
       window.removeEventListener('mousemove', userActivityListener);
       window.removeEventListener('click', userActivityListener);
       window.removeEventListener('keypress', userActivityListener);
@@ -615,3 +640,4 @@ export const useGame = (): GameContextProps => {
   }
   return context;
 };
+

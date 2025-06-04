@@ -24,13 +24,14 @@ export default function GardenPlot() {
   const { state, dispatch } = useGame();
   const { toast } = useToast();
   const currentEraConfig = ERAS[state.currentEra];
-  const [currentTime, setCurrentTime] = useState(Date.now());
+  const [clientCurrentTime, setClientCurrentTime] = useState<number | null>(null);
   
   const availableCropsInCurrentEra = Object.values(ALL_CROPS_MAP).filter(crop => crop.era === state.currentEra);
   const [selectedCropToPlant, setSelectedCropToPlant] = useState<string>(availableCropsInCurrentEra[0]?.id || "");
 
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
+    setClientCurrentTime(Date.now()); // Set on client after mount
+    const timer = setInterval(() => setClientCurrentTime(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
 
@@ -75,6 +76,7 @@ export default function GardenPlot() {
 
 
   const handleClearSlot = (slotIndex: number) => {
+    if (clientCurrentTime === null) return; // Should not happen if button is visible
     dispatch({ type: 'USER_INTERACTION' });
     const plantedCrop = state.plotSlots[slotIndex];
     if (plantedCrop) {
@@ -97,14 +99,16 @@ export default function GardenPlot() {
           growthTime *= 0.75; // 25% reduction from Future Growth Optimizer
         }
 
-        const isMature = (currentTime - plantedCrop.plantedAt) / 1000 >= growthTime;
+        const isMature = (clientCurrentTime - plantedCrop.plantedAt) / 1000 >= growthTime;
         if (!isMature) {
              dispatch({ type: 'HARVEST_CROP', payload: { slotIndex } }); // Will effectively clear it if not mature due to game logic
         }
     }
   };
 
-  const getGrowthProgress = (plantedAt: number, baseGrowthTime: number, cropId: string, cropEra: EraID) => {
+  const getGrowthProgress = (plantedAt: number, baseGrowthTime: number, cropId: string, cropEra: EraID, effectiveCurrentTime: number | null) => {
+    if (effectiveCurrentTime === null) return 0;
+
     let growthTime = baseGrowthTime;
     
     const globalSpeedBoostLevel = state.permanentUpgradeLevels.permGlobalGrowSpeed || 0;
@@ -127,7 +131,7 @@ export default function GardenPlot() {
       return 0; // Growth halted if special condition not met
     }
 
-    const elapsedTime = (currentTime - plantedAt) / 1000;
+    const elapsedTime = (effectiveCurrentTime - plantedAt) / 1000;
     return Math.min(100, (elapsedTime / growthTime) * 100);
   };
   
@@ -235,7 +239,7 @@ export default function GardenPlot() {
               );
 
               const CropIcon = cropConfig.icon;
-              const growthProgress = getGrowthProgress(slot.plantedAt, cropConfig.growthTime, slot.cropId, slot.era);
+              const growthProgress = getGrowthProgress(slot.plantedAt, cropConfig.growthTime, slot.cropId, slot.era, clientCurrentTime);
               const isMature = growthProgress >= 100;
               const canGrow = !cropConfig.specialGrowthCondition || cropConfig.specialGrowthCondition(state);
 
@@ -258,12 +262,12 @@ export default function GardenPlot() {
                   <CardContent className="text-xs px-2 pb-1 flex-grow">
                     <Progress value={growthProgress} className="w-full h-1.5 mb-1" />
                     <p className="text-center text-muted-foreground">
-                        {isMature ? "Ready!" : !canGrow ? "Stalled..." : `${Math.floor(growthProgress)}%`}
+                        {clientCurrentTime === null ? "Loading..." : isMature ? "Ready!" : !canGrow ? "Stalled..." : `${Math.floor(growthProgress)}%`}
                     </p>
                   </CardContent>
                   <CardFooter className="p-1 sm:p-2">
                     {isMature ? (
-                      <Button size="sm" onClick={() => handleHarvestCrop(index)} className="w-full text-xs h-8">
+                      <Button size="sm" onClick={() => handleHarvestCrop(index)} className="w-full text-xs h-8" disabled={clientCurrentTime === null}>
                         <CheckCircle className="w-3 h-3 mr-1" /> Harvest
                       </Button>
                     ) : (
@@ -279,6 +283,7 @@ export default function GardenPlot() {
                         className="absolute top-0 right-0 h-6 w-6" 
                         onClick={() => handleClearSlot(index)}
                         title="Uproot"
+                        disabled={clientCurrentTime === null}
                     >
                         <Trash2 className="h-3 w-3 text-destructive" />
                     </Button>
@@ -293,6 +298,8 @@ export default function GardenPlot() {
                      plantDisabled = true;
                      plantTooltip = `${selectedCropConfig.name} has unmet growth conditions.`;
                  }
+                 if (clientCurrentTime === null) plantDisabled = true;
+
 
               return (
                 <Card key={index} className="aspect-square flex items-center justify-center bg-muted/30 hover:bg-muted/50 transition-colors border-dashed">
@@ -301,7 +308,7 @@ export default function GardenPlot() {
                     className="w-full h-full flex flex-col items-center justify-center"
                     onClick={() => handlePlantCrop(index)}
                     disabled={plantDisabled}
-                    title={plantTooltip}
+                    title={plantTooltip || (clientCurrentTime === null ? "Loading time..." : "Plant selected crop")}
                   >
                     <PlusCircle className="w-6 h-6 text-primary mb-1" />
                     <span className="text-xs text-center">Plant Selected</span>
@@ -324,3 +331,4 @@ export default function GardenPlot() {
     </Card>
   );
 }
+
