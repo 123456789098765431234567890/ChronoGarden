@@ -1,3 +1,4 @@
+
 "use client";
 
 import React from 'react';
@@ -17,26 +18,24 @@ import {
 import { Recycle, Zap, Sparkles } from 'lucide-react';
 import { SidebarMenuButton } from '../ui/sidebar';
 import { useToast } from '@/hooks/use-toast';
+import { ERAS } from '@/config/gameConfig'; // Import ERAS from central config
 
 export default function PrestigeAltar() {
   const { state, dispatch } = useGame();
   const { toast } = useToast();
 
-  // Determine if prestige is beneficial. Example: must have unlocked at least 'Modern' era.
   const canPrestige = state.unlockedEras.includes('Modern'); 
 
   const handlePrestige = () => {
-    // Example: Add one random "rare seed" from currently known high-value crops
     const highValueCrops = Object.values(state.unlockedEras)
       .flatMap(eraId => ERAS[eraId]?.availableCrops || [])
-      .filter(crop => (crop.unlockCost || 0) > 50 || crop.id.includes("fruit") || crop.id.includes("photon")) // Arbitrary criteria
+      .filter(crop => (crop.unlockCost || 0) > 50 || crop.id.includes("fruit") || crop.id.includes("photon"))
       .map(crop => crop.id);
     
     if (highValueCrops.length > 0) {
       const randomRareSeed = highValueCrops[Math.floor(Math.random() * highValueCrops.length)];
       if (!state.rareSeeds.includes(randomRareSeed)) {
          // dispatch({ type: 'ADD_RARE_SEED', payload: randomRareSeed }); // Action to be added in context
-         // For now, we just log it, actual rare seed mechanics would be more complex
          console.log("Awarded rare seed (conceptual):", randomRareSeed);
       }
     }
@@ -81,11 +80,4 @@ export default function PrestigeAltar() {
   );
 }
 
-// Dummy ERAS config for standalone component if needed (prefer importing from gameConfig)
-const ERAS = {
-  "Present": {id: "Present", name: "Present", availableCrops: []},
-  "Prehistoric": {id: "Prehistoric", name: "Prehistoric", availableCrops: []},
-  "Medieval": {id: "Medieval", name: "Medieval", availableCrops: []},
-  "Modern": {id: "Modern", name: "Modern", availableCrops: []},
-  "Future": {id: "Future", name: "Future", availableCrops: []},
-}
+    

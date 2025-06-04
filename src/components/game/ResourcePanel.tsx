@@ -1,28 +1,34 @@
+
 "use client";
 
 import React from 'react';
 import { useGame } from '@/contexts/GameContext';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ALL_GAME_RESOURCES_MAP, ERAS } from '@/config/gameConfig';
 import { SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem } from '@/components/ui/sidebar';
-import { Package } from 'lucide-react';
-
+import { Package, Leaf as LeafIconLucide } from 'lucide-react'; // Renamed LeafIcon to LeafIconLucide
 
 export default function ResourcePanel() {
   const { state } = useGame();
-  const currentEraResources = ERAS[state.currentEra].eraSpecificResources.map(r => r.id);
+  const currentEraResources = ERAS[state.currentEra]?.eraSpecificResources.map(r => r.id) || [];
 
-  // Filter resources to display: general resources + current era specific resources + any collected resources
+  const coreResourceIds = ['Water', 'Sunlight', 'Coins', 'Energy', 'ChronoEnergy', 'Nutrients'];
+
   const resourcesToDisplay = Object.entries(state.resources)
     .map(([id, amount]) => {
       const config = ALL_GAME_RESOURCES_MAP[id];
       if (config) return { ...config, amount };
-      // Fallback for dynamically added resources (like crop yields)
       return { id, name: id, icon: Package, amount, description: "Collected item" };
     })
-    .filter(r => r.amount > 0 || ['ChronoEnergy', 'Water', 'Seeds', 'Nutrients'].includes(r.id) || currentEraResources.includes(r.id) ) // Show if amount > 0 or core/era resource
-    .sort((a,b) => a.name.localeCompare(b.name));
+    .filter(r => r.amount > 0 || coreResourceIds.includes(r.id) || currentEraResources.includes(r.id))
+    .sort((a, b) => {
+      // Prioritize core resources
+      const isACore = coreResourceIds.includes(a.id);
+      const isBCore = coreResourceIds.includes(b.id);
+      if (isACore && !isBCore) return -1;
+      if (!isACore && isBCore) return 1;
+      return a.name.localeCompare(b.name);
+    });
 
 
   return (
@@ -35,8 +41,8 @@ export default function ResourcePanel() {
         {resourcesToDisplay.map((resource) => {
           const IconComponent = resource.icon || Package;
           return (
-            <SidebarMenuItem key={resource.id} title={`${resource.name}: ${resource.description || ''}`}>
-              <div className="flex items-center justify-between w-full p-1 rounded-md hover:bg-sidebar-accent">
+            <SidebarMenuItem key={resource.id} title={`${resource.name}: ${Math.floor(resource.amount)} (${resource.description || ''})`}>
+              <div className="flex items-center justify-between w-full p-1 rounded-md hover:bg-sidebar-accent/50">
                 <div className="flex items-center">
                   <IconComponent className="h-4 w-4 mr-2 shrink-0" />
                   <span className="truncate group-data-[collapsible=icon]:hidden">{resource.name}</span>
@@ -50,9 +56,9 @@ export default function ResourcePanel() {
         })}
       </SidebarMenu>
       <SidebarMenuItem title="Soil Quality">
-        <div className="flex items-center justify-between w-full p-1 rounded-md hover:bg-sidebar-accent">
+        <div className="flex items-center justify-between w-full p-1 rounded-md hover:bg-sidebar-accent/50">
           <div className="flex items-center">
-            <LeafIcon className="h-4 w-4 mr-2 shrink-0 text-green-600" />
+            <LeafIconLucide className="h-4 w-4 mr-2 shrink-0 text-green-600" />
             <span className="truncate group-data-[collapsible=icon]:hidden">Soil Quality</span>
           </div>
           <span className="font-mono group-data-[collapsible=icon]:text-[10px] group-data-[collapsible=icon]:mt-1">
@@ -64,21 +70,4 @@ export default function ResourcePanel() {
   );
 }
 
-// A generic LeafIcon if not available in lucide-react or for specific styling
-const LeafIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    {...props}
-  >
-    <path d="M12 22c-4-4-6-7-6-10a6 6 0 0 1 12 0c0 3-2 6-6 10z" />
-    <path d="M12 6V2" />
-    <path d="M12 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" />
-    <path d="M12 22c4-4 6-7 6-10a6 6 0 0 0-12 0c0 3 2 6 6 10z" transform="scale(0.5) translate(12 22)"/>
-  </svg>
-);
+    
