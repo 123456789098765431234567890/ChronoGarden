@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -14,14 +15,14 @@ import {z} from 'genkit';
 const AnalyzeCropsAndSuggestImprovementsInputSchema = z.object({
   cropHealthData: z
     .string()
-    .describe('Data about the health of the crops in the garden.'),
+    .describe('Detailed information about the health and status of the crops in the garden, including soil quality, types of crops planted in the current era, and key resource levels (Water, Sunlight, Coins, Energy, ChronoEnergy, and era-specific resources).'),
   automationConfiguration: z
     .string()
-    .describe('The current automation configuration of the garden.'),
+    .describe('Information on the current automation setup, including active automations in the current era and the total number of automations built.'),
   era: z
     .string()
     .describe(
-      'The era that the garden is in, which affects the types of crops and automation available.'
+      'The current era the player is in (e.g., Present, Prehistoric, Future), which affects available crops, technologies, and challenges.'
     ),
 });
 
@@ -33,7 +34,7 @@ const AnalyzeCropsAndSuggestImprovementsOutputSchema = z.object({
   suggestions: z
     .string()
     .describe(
-      'AI-generated suggestions for improving crop health and automation configurations.'
+      'AI-generated, actionable, bullet-pointed suggestions for improving crop health, optimizing automation, managing resources, or preparing for the next era, tailored to the player\'s current situation in the specified era.'
     ),
 });
 
@@ -51,17 +52,21 @@ const prompt = ai.definePrompt({
   name: 'analyzeCropsAndSuggestImprovementsPrompt',
   input: {schema: AnalyzeCropsAndSuggestImprovementsInputSchema},
   output: {schema: AnalyzeCropsAndSuggestImprovementsOutputSchema},
-  prompt: `You are an AI crop engineer providing advice to a player of ChronoGarden.
+  prompt: `You are an expert AI Crop Engineer advising a player in the game ChronoGarden.
+The player is currently in the '{{{era}}}' era.
 
-You will be provided with data about the player's crop health and automation configurations, as well as the current era they are in.
+Here's the current state of their garden:
+Crop Health & Status:
+{{{cropHealthData}}}
 
-Based on this information, you will suggest ways to improve the player's garden.
+Automation Systems:
+{{{automationConfiguration}}}
 
-Crop Health Data: {{{cropHealthData}}}
-Automation Configuration: {{{automationConfiguration}}}
-Era: {{{era}}}
-
-Suggestions:`,
+Consider the player's current era, their crop status, active automations, and available resources.
+Provide 2-3 concise, actionable suggestions to help them optimize their garden in the '{{{era}}}' era.
+Focus on improving yield, resource management, efficiently using automations, or preparing for the next era if appropriate.
+Be specific and explain *why* your suggestions are beneficial.
+Format your suggestions as a bulleted list (e.g., using '*' or '-').`,
 });
 
 const analyzeCropsAndSuggestImprovementsFlow = ai.defineFlow(
@@ -75,3 +80,4 @@ const analyzeCropsAndSuggestImprovementsFlow = ai.defineFlow(
     return output!;
   }
 );
+

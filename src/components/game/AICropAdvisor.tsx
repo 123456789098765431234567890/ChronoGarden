@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState } from 'react';
@@ -10,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { BrainCircuit, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from "@/hooks/use-toast";
+import { ALL_CROPS_MAP, ERAS, ALL_GAME_RESOURCES_MAP } from '@/config/gameConfig'; // Added imports
 
 export default function AICropAdvisor() {
   const { state, dispatch } = useGame();
@@ -22,13 +24,32 @@ export default function AICropAdvisor() {
     dispatch({ type: 'SET_AI_LOADING', payload: true });
     dispatch({ type: 'SET_AI_SUGGESTION', payload: null });
 
-    // Prepare data for the AI
-    // For a real game, this data would be more structured and detailed.
-    const cropHealthData = customCropHealth || 
-      `Soil Quality: ${state.soilQuality}%. Planted crops: ${state.plantedCrops.length}. Recent issues: none noted.`;
-    
+    const plantedCropsInCurrentEra = state.plotSlots.filter(slot => slot && slot.era === state.currentEra);
+    const cropDetailsString = plantedCropsInCurrentEra.map(slot => {
+      if (!slot) return '';
+      const crop = ALL_CROPS_MAP[slot.cropId];
+      return `${crop?.name || 'Unknown Crop'} (planted)`;
+    }).filter(Boolean).join(', ') || 'No crops planted in this era.';
+
+    const cropHealthData = customCropHealth ||
+      `Soil Quality: ${state.soilQuality}%.
+Crops in ${state.currentEra}: ${cropDetailsString}.
+Key Resources: Water: ${Math.floor(state.resources.Water || 0)}, Sunlight: ${Math.floor(state.resources.Sunlight || 0)}, Coins: ${Math.floor(state.resources.Coins || 0)}, Energy: ${Math.floor(state.resources.Energy || 0)}, ChronoEnergy: ${Math.floor(state.chronoEnergy || 0)}.
+${state.currentEra} Era Specific Resources: ${Object.entries(state.resources)
+  .filter(([key, value]) => ERAS[state.currentEra].eraSpecificResources.find(r => r.id === key) && value > 0)
+  .map(([key, value]) => `${ALL_GAME_RESOURCES_MAP[key]?.name || key}: ${Math.floor(value)}`)
+  .join(', ') || 'None available'
+}.
+Recent issues: None noted by player.`;
+
+    const activeAutomationsInCurrentEra = state.automationRules
+      .filter(rule => rule.era === state.currentEra && state.activeAutomations[rule.id])
+      .map(rule => rule.name)
+      .join(', ') || 'None active in this era.';
+
     const automationConfiguration = customAutomationConfig ||
-      `Active automations: ${state.automationRules.map(r => r.name).join(', ') || 'None'}.`;
+      `Active automations in ${state.currentEra}: ${activeAutomationsInCurrentEra}.
+Total automations built across all eras: ${state.automationRules.length}.`;
 
     const era = state.currentEra;
 
@@ -55,34 +76,33 @@ export default function AICropAdvisor() {
           AI Crop Advisor
         </CardTitle>
         <CardDescription>
-          Get suggestions from your AI Crop Engineer to optimize your garden based on current conditions.
-          This feature is typically available in the 'Future' era but can be consulted anytime.
+          Get intelligent suggestions from your AI Crop Engineer to optimize your garden based on current conditions in the {state.currentEra} era.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div>
-          <Label htmlFor="customCropHealth" className="font-semibold">Describe Crop Health (Optional)</Label>
+          <Label htmlFor="customCropHealth" className="font-semibold">Override Crop Health Description (Optional)</Label>
           <Textarea
             id="customCropHealth"
-            placeholder="e.g., Plants are wilting, soil is dry..."
+            placeholder="e.g., My Sunflowers seem to be yielding less than expected, and soil is very dry..."
             value={customCropHealth}
             onChange={(e) => setCustomCropHealth(e.target.value)}
             className="min-h-[80px]"
           />
-          <p className="text-xs text-muted-foreground mt-1">If empty, general game state will be used.</p>
+          <p className="text-xs text-muted-foreground mt-1">If empty, detailed game state will be automatically sent.</p>
         </div>
         <div>
-          <Label htmlFor="customAutomationConfig" className="font-semibold">Describe Automation Setup (Optional)</Label>
+          <Label htmlFor="customAutomationConfig" className="font-semibold">Override Automation Setup Description (Optional)</Label>
           <Textarea
             id="customAutomationConfig"
-            placeholder="e.g., Using auto-water sprinklers, harvest bots active..."
+            placeholder="e.g., I'm relying heavily on my Raptor Harvesters but they keep destroying young plants..."
             value={customAutomationConfig}
             onChange={(e) => setCustomAutomationConfig(e.target.value)}
             className="min-h-[80px]"
           />
-           <p className="text-xs text-muted-foreground mt-1">If empty, active automations list will be used.</p>
+           <p className="text-xs text-muted-foreground mt-1">If empty, active automations list will be automatically sent.</p>
         </div>
-        
+
         <Button onClick={handleSubmitForAISuggestion} disabled={state.isLoadingAiSuggestion} className="w-full sm:w-auto">
           {state.isLoadingAiSuggestion ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -101,8 +121,9 @@ export default function AICropAdvisor() {
         )}
       </CardContent>
       <CardFooter className="text-sm text-muted-foreground">
-        AI suggestions are based on the provided data and the current game era. Experiment to find what works best!
+        AI suggestions are generated based on the provided data (or current game state) and the active game era. Experiment to find what works best!
       </CardFooter>
     </Card>
   );
 }
+
