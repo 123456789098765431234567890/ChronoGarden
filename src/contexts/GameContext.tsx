@@ -46,8 +46,8 @@ const createDefaultState = (): GameState => {
     aiSuggestion: null,
     upgradeLevels: Object.keys(UPGRADES_CONFIG).reduce((acc, id) => { acc[id] = 0; return acc; }, {} as Record<string, number>),
     lastTick: 0, 
-    lastUserInteractionTime: Date.now(), // Initialize with current time
-    lastAutoPlantTime: Date.now(), // Initialize with current time
+    lastUserInteractionTime: 0, // Initialize with 0 for server/client consistency
+    lastAutoPlantTime: 0, // Initialize with 0 for server/client consistency
     prestigeCount: 0,
     permanentUpgradeLevels: Object.keys(PERMANENT_UPGRADES_CONFIG).reduce((acc, id) => { acc[id] = 0; return acc; }, {} as Record<string, number>),
     synergyStats: {
@@ -55,8 +55,8 @@ const createDefaultState = (): GameState => {
       cropsHarvestedPrehistoric: 0,
       cropsHarvestedFuture: 0,
     },
-    currentWeatherId: getRandomWeatherId(null),
-    weatherEndTime: Date.now() + getRandomWeatherDuration(getRandomWeatherId(null)),
+    currentWeatherId: "clear", // Static default for initial render consistency
+    weatherEndTime: 0, // Signal to initialize client-side
     goalStatus: initialGoalStatus,
     goalProgressTrackers: {
       carrotsHarvested: 0,
@@ -155,7 +155,7 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
        if (cropConfig.specialGrowthCondition && !cropConfig.specialGrowthCondition(state)) {
         return state; // Cannot plant due to special conditions
       }
-       if (cropConfig.isIdleDependent && (Date.now() - state.lastUserInteractionTime) / 1000 < IDLE_THRESHOLD_SECONDS) {
+       if (cropConfig.isIdleDependent && state.lastUserInteractionTime !== 0 && (Date.now() - state.lastUserInteractionTime) / 1000 < IDLE_THRESHOLD_SECONDS) {
          // Optionally, show a toast or prevent planting if player is too active for Glowshroom
          // For now, just let it plant, growth will be stalled if active
       }
@@ -208,7 +208,7 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
         });
 
         const newPlotSlots = [...state.plotSlots];
-        newPlotSlots[slotIndex] = { cropId, era: state.currentEra, plantedAt: Date.now(), id: crypto.randomUUID() };
+        newPlotSlots[slotIndex] = { cropId, era: state.currentEra, plantedAt: Date.now(), id: crypto.randomUUID(), maturityCheckedForDecay: false };
         
         newState.resources = newResources;
         newState.plotSlots = newPlotSlots;
@@ -465,14 +465,25 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       break;
     }
     case 'GAME_TICK': {
-      if (state.lastTick === 0) {
-        return { ...state, lastTick: Date.now() }; 
-      }
       const now = Date.now();
+      if (state.lastTick === 0) { // First tick after load or reset
+        newState.lastTick = now;
+        newState.lastUserInteractionTime = now;
+        newState.lastAutoPlantTime = now;
+        // Initialize weather if it's marked as needing init (weatherEndTime is 0)
+        if (newState.weatherEndTime === 0) {
+            const initialWeatherId = getRandomWeatherId(null);
+            const initialWeatherDuration = getRandomWeatherDuration(initialWeatherId);
+            newState.currentWeatherId = initialWeatherId;
+            newState.weatherEndTime = now + initialWeatherDuration;
+        }
+        return newState;
+      }
+
       let newResources = { ...newState.resources };
 
       // Weather System
-      if (!state.currentWeatherId || now >= state.weatherEndTime) {
+      if (now >= state.weatherEndTime && state.weatherEndTime !== 0) { // Check weatherEndTime !== 0 to avoid init loop if it was 0
         const nextWeatherId = getRandomWeatherId(state.currentWeatherId);
         const duration = getRandomWeatherDuration(nextWeatherId);
         newState = gameReducer(newState, {type: 'SET_WEATHER', payload: { weatherId: nextWeatherId, duration }});
@@ -497,7 +508,8 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       // NanoVine Decay Check
       const newPlotSlotsForDecay = [...newState.plotSlots];
       let plotChangedByDecay = false;
-      newPlotSlotsForDecay.forEach((slot, index) => {
+      newPlotSlotsForDecay.forEach((slotData, index) => {
+        const slot = slotData as PlantedCrop | null;
         if (slot && slot.cropId === 'nanovine') {
             const cropConfig = ALL_CROPS_MAP.nanovine;
             const effectiveGrowthTime = calculateEffectiveGrowthTime(cropConfig.growthTime, slot.cropId, slot.era, newState);
@@ -533,7 +545,8 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
             case 'autoharvester_present':
               if (Math.floor(now / currentAutomationTickInterval) > Math.floor(state.lastTick / currentAutomationTickInterval)) {
                 const matureSlots: number[] = [];
-                newState.plotSlots.forEach((slot, index) => {
+                newState.plotSlots.forEach((slotData, index) => {
+                    const slot = slotData as PlantedCrop | null;
                     if (slot && slot.era === "Present") {
                         const cropCfg = ALL_CROPS_MAP[slot.cropId];
                         const effGrowthTime = calculateEffectiveGrowthTime(cropCfg.growthTime, slot.cropId, slot.era, newState);
@@ -550,7 +563,8 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
             case 'raptorharvester_prehistoric':
               if (Math.floor(now / currentAutomationTickInterval) > Math.floor(state.lastTick / currentAutomationTickInterval)) {
                 const matureSlots: number[] = [];
-                newState.plotSlots.forEach((slot, index) => {
+                newState.plotSlots.forEach((slotData, index) => {
+                    const slot = slotData as PlantedCrop | null;
                     if (slot && slot.era === "Prehistoric") {
                         const cropCfg = ALL_CROPS_MAP[slot.cropId];
                         const effGrowthTime = calculateEffectiveGrowthTime(cropCfg.growthTime, slot.cropId, slot.era, newState);
@@ -563,7 +577,7 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
                     Object.assign(newResources, newState.resources);
                 }
                 if (Math.random() < 0.05) {
-                    const youngPlantsIndexes = newState.plotSlots.map((s, i) => s && s.era === "Prehistoric" ? i : -1).filter(i => i !== -1);
+                    const youngPlantsIndexes = newState.plotSlots.map((s, i) => s && (s as PlantedCrop).era === "Prehistoric" ? i : -1).filter(i => i !== -1);
                     if (youngPlantsIndexes.length > 0) {
                         const unluckyIndex = youngPlantsIndexes[Math.floor(Math.random() * youngPlantsIndexes.length)];
                         newState.plotSlots = [...newState.plotSlots]; 
@@ -630,7 +644,7 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       });
       newState.resources = newResources;
       
-      if (state.rareSeeds.length > 0 && (now - state.lastAutoPlantTime) / 1000 >= 30) {
+      if (state.rareSeeds.length > 0 && (now - state.lastAutoPlantTime) / 1000 >= 30 && state.lastAutoPlantTime !== 0) {
         const emptyPlotIndexes = newState.plotSlots.map((slot, index) => slot === null ? index : -1).filter(index => index !== -1);
         if (emptyPlotIndexes.length > 0) {
           const randomRareSeedId = state.rareSeeds[Math.floor(Math.random() * state.rareSeeds.length)];
@@ -706,12 +720,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(gameReducer, createDefaultState());
 
   useEffect(() => {
+    let initialState = createDefaultState();
     if (typeof window !== 'undefined') {
       const savedStateJson = localStorage.getItem('chronoGardenSave');
       if (savedStateJson) {
         try {
           const savedState = JSON.parse(savedStateJson) as Partial<GameState>;
-          const defaultState = createDefaultState();
           
           const initialGoalStatus: Record<GoalID, { progress: number; completed: boolean }> = 
             Object.keys(GOALS_CONFIG).reduce((acc, goalId) => {
@@ -719,28 +733,38 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
               return acc;
             }, {} as Record<GoalID, { progress: number; completed: boolean }>);
 
-          const mergedState: GameState = {
-            ...defaultState,
-            ...savedState,
-            resources: { ...defaultState.resources, ...savedState.resources },
+          let mergedState: GameState = {
+            ...initialState, // Start with fresh defaults
+            ...savedState, // Overlay saved data
+            resources: { ...initialState.resources, ...savedState.resources },
             plotSlots: Array.isArray(savedState.plotSlots) && savedState.plotSlots.length === GARDEN_PLOT_SIZE 
-              ? savedState.plotSlots.map(p => p ? {...p, maturityCheckedForDecay: p.maturityCheckedForDecay ?? false} : null) // Ensure new fields
+              ? savedState.plotSlots.map(p => p ? {...p, maturityCheckedForDecay: p.maturityCheckedForDecay ?? false} : null)
               : Array(GARDEN_PLOT_SIZE).fill(null),
             automationRules: Array.isArray(savedState.automationRules) ? savedState.automationRules : [],
             activeAutomations: savedState.activeAutomations || {},
             rareSeeds: Array.isArray(savedState.rareSeeds) ? savedState.rareSeeds : [],
-            upgradeLevels: { ...defaultState.upgradeLevels, ...savedState.upgradeLevels },
-            permanentUpgradeLevels: { ...defaultState.permanentUpgradeLevels, ...savedState.permanentUpgradeLevels },
-            synergyStats: { ...defaultState.synergyStats, ...savedState.synergyStats },
-            currentWeatherId: savedState.currentWeatherId || getRandomWeatherId(null),
-            weatherEndTime: savedState.weatherEndTime || (Date.now() + getRandomWeatherDuration(savedState.currentWeatherId || getRandomWeatherId(null))),
+            upgradeLevels: { ...initialState.upgradeLevels, ...savedState.upgradeLevels },
+            permanentUpgradeLevels: { ...initialState.permanentUpgradeLevels, ...savedState.permanentUpgradeLevels },
+            synergyStats: { ...initialState.synergyStats, ...savedState.synergyStats },
             goalStatus: { ...initialGoalStatus, ...savedState.goalStatus },
-            goalProgressTrackers: { ...defaultState.goalProgressTrackers, ...savedState.goalProgressTrackers},
+            goalProgressTrackers: { ...initialState.goalProgressTrackers, ...savedState.goalProgressTrackers},
             lastTick: Date.now(), 
-            lastUserInteractionTime: savedState.lastUserInteractionTime || Date.now(),
-            lastAutoPlantTime: savedState.lastAutoPlantTime || Date.now(),
+            lastUserInteractionTime: savedState.lastUserInteractionTime && savedState.lastUserInteractionTime > 0 ? savedState.lastUserInteractionTime : Date.now(),
+            lastAutoPlantTime: savedState.lastAutoPlantTime && savedState.lastAutoPlantTime > 0 ? savedState.lastAutoPlantTime : Date.now(),
             prestigeCount: savedState.prestigeCount || 0,
+            // Weather: load saved or initialize if expired/missing
+            currentWeatherId: savedState.currentWeatherId && WEATHER_CONFIG[savedState.currentWeatherId] ? savedState.currentWeatherId : "clear",
+            weatherEndTime: savedState.weatherEndTime && savedState.weatherEndTime > Date.now() ? savedState.weatherEndTime : 0,
           };
+          
+          // If weather is invalid or expired, set new client-side weather
+          if (mergedState.weatherEndTime === 0 || mergedState.weatherEndTime <= Date.now()) {
+            const newWeatherId = getRandomWeatherId(mergedState.currentWeatherId);
+            const newWeatherDuration = getRandomWeatherDuration(newWeatherId);
+            mergedState.currentWeatherId = newWeatherId;
+            mergedState.weatherEndTime = Date.now() + newWeatherDuration;
+          }
+
 
           mergedState.automationRules.forEach(ruleConfig => {
             if (mergedState.activeAutomations[ruleConfig.id] === undefined) {
@@ -764,24 +788,33 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
            if(mergedState.goalStatus.find3RareSeeds && mergedState.goalStatus.find3RareSeeds.progress < mergedState.rareSeeds.length) {
              mergedState.goalStatus.find3RareSeeds.progress = mergedState.rareSeeds.length;
            }
-           // Ensure prestige goal is correctly set from loaded prestige count
             if (mergedState.goalStatus.prestigeOnce && mergedState.prestigeCount > mergedState.goalStatus.prestigeOnce.progress) {
                 mergedState.goalStatus.prestigeOnce.progress = mergedState.prestigeCount;
-                if (mergedState.prestigeCount >= GOALS_CONFIG.prestigeOnce.target && !mergedState.goalStatus.prestigeOnce.completed) {
-                    // This will be handled by a re-check in useEffect or similar if needed, or a direct dispatch.
-                    // For now, let GAME_TICK or next prestige action re-evaluate.
-                }
             }
 
-
-          dispatch({ type: 'LOAD_STATE_FROM_STORAGE', payload: mergedState });
+          initialState = mergedState; // Use merged state as the initial state for dispatch
         } catch (e) {
           console.error("Error loading saved game state:", e);
-          dispatch({ type: 'LOAD_STATE_FROM_STORAGE', payload: createDefaultState() });
+          // Fallback to default, but initialize weather client-side
+          const newWeatherId = getRandomWeatherId(null);
+          const newWeatherDuration = getRandomWeatherDuration(newWeatherId);
+          initialState.currentWeatherId = newWeatherId;
+          initialState.weatherEndTime = Date.now() + newWeatherDuration;
+          initialState.lastTick = Date.now();
+          initialState.lastUserInteractionTime = Date.now();
+          initialState.lastAutoPlantTime = Date.now();
         }
       } else {
-         dispatch({ type: 'LOAD_STATE_FROM_STORAGE', payload: createDefaultState() });
+        // No saved state, initialize weather client-side
+        const newWeatherId = getRandomWeatherId(null);
+        const newWeatherDuration = getRandomWeatherDuration(newWeatherId);
+        initialState.currentWeatherId = newWeatherId;
+        initialState.weatherEndTime = Date.now() + newWeatherDuration;
+        initialState.lastTick = Date.now();
+        initialState.lastUserInteractionTime = Date.now();
+        initialState.lastAutoPlantTime = Date.now();
       }
+      dispatch({ type: 'LOAD_STATE_FROM_STORAGE', payload: initialState });
     }
   }, []); 
 
@@ -792,7 +825,18 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   }, [state]);
 
   useEffect(() => {
-    if (state.lastTick === 0) return; 
+    if (state.lastTick === 0 && typeof window !== 'undefined') {
+        // This handles the case where the game loads for the very first time (no localStorage)
+        // or if localStorage parsing failed and state.lastTick remained 0 from createDefaultState.
+        // We need to ensure the game tick starts.
+        // The LOAD_STATE_FROM_STORAGE in the previous useEffect already sets lastTick to Date.now()
+        // so this might only be needed if that effect somehow doesn't run or state isn't updated.
+        // A safer approach might be to ensure lastTick is set to non-zero in the LOAD_STATE_FROM_STORAGE payload.
+        // For now, let's assume previous useEffect handles setting lastTick correctly for client-side init.
+    }
+
+    if (state.lastTick === 0) return; // Don't start tick if not initialized by LOAD_STATE_FROM_STORAGE yet
+
 
     const tickInterval = setInterval(() => {
       dispatch({ type: 'GAME_TICK' });
@@ -801,12 +845,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     return () => clearInterval(tickInterval);
   }, [state.lastTick]); 
 
-  // Consolidate USER_INTERACTION dispatching to GameProvider level
   useEffect(() => {
     const userActivityListener = () => dispatch({ type: 'USER_INTERACTION' });
     window.addEventListener('click', userActivityListener);
-    window.addEventListener('keydown', userActivityListener); // Listen for key presses too
-    window.addEventListener('mousemove', userActivityListener); // For more sensitive idle detection
+    window.addEventListener('keydown', userActivityListener); 
+    window.addEventListener('mousemove', userActivityListener); 
 
     return () => {
       window.removeEventListener('click', userActivityListener);
