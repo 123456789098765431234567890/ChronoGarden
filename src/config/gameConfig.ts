@@ -1,6 +1,6 @@
 
 import type { ComponentType } from 'react';
-import { Briefcase, Atom, Settings, BrainCircuit, Sprout, Home, Leaf, Clock, Droplets, FlaskConical, Scroll, Dna, Bone, Tractor, Sun, Package, Wheat, Zap, Sparkles, Coins as CoinsIcon, Power, Flower2, Carrot as CarrotIcon, Apple as AppleIcon, Wind, SunDim, Mountain, Feather as FeatherIcon, SlidersHorizontal, Rocket, Recycle, CloudRain, CloudLightning, Target, Trophy, UserCircle, Palette, CheckSquare, Gift, Award } from 'lucide-react';
+import { Briefcase, Atom, Settings, BrainCircuit, Sprout, Home, Leaf, Clock, Droplets, FlaskConical, Scroll, Dna, Bone, Tractor, Sun, Package, Wheat, Zap, Sparkles, Coins as CoinsIcon, Power, Flower2, Carrot as CarrotIcon, Apple as AppleIcon, Wind, SunDim, Mountain, Feather as FeatherIcon, SlidersHorizontal, Rocket, Recycle, CloudRain, CloudLightning, Target, Trophy, UserCircle, Palette, CheckSquare, Gift, Award, Users, MessageCircle, BookOpen } from 'lucide-react';
 
 export type EraID = "Present" | "Prehistoric" | "Medieval" | "Modern" | "Future";
 
@@ -152,6 +152,8 @@ export interface VisitorConfig {
 }
 
 export type PrestigeTierID = "Novice" | "Apprentice" | "Adept" | "Master" | "Grandmaster";
+const TreePalm = Award; // Using Award as a placeholder for TreePalm, defined before usage.
+
 export interface PrestigeTierConfig {
   id: PrestigeTierID;
   minPrestigeCount: number;
@@ -168,15 +170,22 @@ export interface LeaderboardEntry {
   lastUpdate?: number;
 }
 
+export interface LoreEntry {
+  id: string;
+  title: string;
+  content: string; // Can be multi-line
+  unlockHint: string; // Hint for how to unlock it
+  isUnlockedByDefault?: boolean;
+}
+
 
 export const GARDEN_PLOT_SIZE = 9;
-export const GAME_VERSION = "v0.5.1"; 
+export const GAME_VERSION = "v0.6.0"; 
 export const IDLE_THRESHOLD_SECONDS = 10;
 export const NANO_VINE_DECAY_WINDOW_SECONDS = 20;
 export const VISITOR_SPAWN_CHECK_INTERVAL_SECONDS = 60; // Check every minute
 export const QUEST_PROGRESS_SAVE_INTERVAL_SECONDS = 30; // Not actively used yet but good constant
 
-const TreePalm = Award; 
 
 export const PRESTIGE_TIERS_CONFIG: Record<PrestigeTierID, PrestigeTierConfig> = {
   Novice: { id: "Novice", minPrestigeCount: 0, icon: Sprout, title: "Novice Time Gardener" },
@@ -650,6 +659,34 @@ export const NPC_VISITORS_CONFIG: Record<VisitorID, VisitorConfig> = {
   }
 };
 
+export const LORE_CONFIG: Record<string, LoreEntry> = {
+  lore_intro: {
+    id: "lore_intro",
+    title: "The ChronoGarden Beckons",
+    content: "A strange anomaly ripples through time. A seed, a plot of land, and a whisper of ancient technology... This is the ChronoGarden. Can you master the art of temporal horticulture?",
+    unlockHint: "Unlocked by default.",
+    isUnlockedByDefault: true,
+  },
+  lore_nexus_discovery: {
+    id: "lore_nexus_discovery",
+    title: "Whispers of the Nexus",
+    content: "The first Prestige... a cycle completed. The fabric of time shivers, revealing a hidden structure - the Chrono Nexus. It hums with contained temporal energy, promising permanent alterations to the flow of your garden.",
+    unlockHint: "Unlocked after your first Prestige.",
+  },
+  lore_prehistoric_puzzle: {
+    id: "lore_prehistoric_puzzle",
+    title: "Ancient Echoes",
+    content: "The Prehistoric era feels... incomplete. As if something grand once stood here, now lost to the ages. The Dino Roots pulse with a faint, mournful energy. What happened here?",
+    unlockHint: "Unlocked by harvesting 10 Dino Roots.",
+  },
+  lore_future_tech: {
+    id: "lore_future_tech",
+    title: "A Calculated Future",
+    content: "The Future Domes are marvels of bio-engineering. Synth Blooms glow with artificial life, Nano Vines construct themselves with impossible speed. Is this advancement... or something else entirely? The AI seems to know more than it lets on.",
+    unlockHint: "Unlocked by building your first Future-era automation.",
+  },
+};
+
 
 export interface GameState {
   currentEra: EraID;
@@ -682,7 +719,9 @@ export interface GameState {
     prehistoricUnlocked: number;
     rareSeedsFoundCount: number;
     prestigeCount: number; // Ensure this is included
-    [key: string]: number; 
+    dinoRootsHarvested?: number;
+    futureAutomationsBuilt?: number;
+    [key: string]: number | undefined; 
   };
   playerName: string;
   gardenName: string;
@@ -698,6 +737,7 @@ export interface GameState {
   totalChronoEnergyEarned: number;
   totalCropsHarvestedAllTime: number;
   lastVisitorSpawnCheck: number;
+  unlockedLoreIds: string[];
 }
 export interface PlantedCrop {
   cropId: string;
@@ -791,3 +831,8 @@ export const getCurrentPrestigeTier = (prestigeCount: number): PrestigeTierConfi
   return currentTier;
 };
 
+export const getInitialUnlockedLoreIds = (): string[] => {
+  return Object.values(LORE_CONFIG)
+    .filter(entry => entry.isUnlockedByDefault)
+    .map(entry => entry.id);
+};

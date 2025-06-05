@@ -3,11 +3,11 @@
 
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useReducer, Dispatch, useEffect } from 'react';
-import type { EraID, AutomationRule, Crop, WeatherID, GoalID, VisitorID, QuestConfig, QuestStatus, LeaderboardEntry } from '@/config/gameConfig';
+import type { EraID, AutomationRule, Crop, WeatherID, GoalID, VisitorID, QuestConfig, QuestStatus, LeaderboardEntry, LoreEntry } from '@/config/gameConfig';
 import { 
     ERAS, INITIAL_RESOURCES, GARDEN_PLOT_SIZE, ALL_CROPS_MAP, 
     AUTOMATION_RULES_CONFIG, UPGRADES_CONFIG, ALL_GAME_RESOURCES_MAP,
-    PERMANENT_UPGRADES_CONFIG, SYNERGY_CONFIG, WEATHER_CONFIG, GOALS_CONFIG,
+    PERMANENT_UPGRADES_CONFIG, SYNERGY_CONFIG, WEATHER_CONFIG, GOALS_CONFIG, LORE_CONFIG, getInitialUnlockedLoreIds,
     getRandomWeatherId, getRandomWeatherDuration, GameState as ConfigGameState,
     IDLE_THRESHOLD_SECONDS, NANO_VINE_DECAY_WINDOW_SECONDS, ALL_CROPS_LIST,
     calculateEffectiveGrowthTime, COMMON_RESOURCES_FOR_BONUS,
@@ -60,6 +60,8 @@ const createDefaultState = (): GameState => {
       prehistoricUnlocked: 0,
       rareSeedsFoundCount: 0,
       prestigeCount: 0,
+      dinoRootsHarvested: 0,
+      futureAutomationsBuilt: 0,
     },
     playerName: "Time Gardener",
     gardenName: "My ChronoGarden",
@@ -69,6 +71,7 @@ const createDefaultState = (): GameState => {
     totalChronoEnergyEarned: 0,
     totalCropsHarvestedAllTime: 0,
     lastVisitorSpawnCheck: 0,
+    unlockedLoreIds: getInitialUnlockedLoreIds(),
   };
 };
 
@@ -104,6 +107,7 @@ type GameAction =
   | { type: 'COMPLETE_QUEST' }
   | { type: 'FAIL_QUEST' } 
   | { type: 'DISMISS_VISITOR' }
+  | { type: 'UNLOCK_LORE'; payload: string } // Lore ID
   | { type: 'GAME_TICK' };
 
 
@@ -284,6 +288,14 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       if (cropConfig.id === "carrot") {
         newState = gameReducer(newState, { type: 'UPDATE_GOAL_PROGRESS', payload: { goalId: "harvest10Carrots", increment: 1 }});
       }
+      if (cropConfig.id === "dinoroot") {
+        newState.goalProgressTrackers.dinoRootsHarvested = (newState.goalProgressTrackers.dinoRootsHarvested || 0) + 1;
+        if (newState.goalProgressTrackers.dinoRootsHarvested === 10 && !newState.unlockedLoreIds.includes('lore_prehistoric_puzzle')) {
+          newState = gameReducer(newState, { type: 'UNLOCK_LORE', payload: 'lore_prehistoric_puzzle' });
+        }
+      }
+
+
       if (state.activeQuest && state.activeQuest.status === 'active') {
         newState = gameReducer(newState, { type: 'PROGRESS_QUEST', payload: { cropId: cropConfig.id, weatherId: state.currentWeatherId || undefined } });
       }
@@ -311,6 +323,13 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       newState.automationRules = [...state.automationRules, ruleConfig];
       newState.activeAutomations = {...state.activeAutomations, [ruleConfig.id]: true };
       newState.soilQuality = Math.max(0, state.soilQuality - 1); 
+
+      if (ruleConfig.era === 'Future') {
+        newState.goalProgressTrackers.futureAutomationsBuilt = (newState.goalProgressTrackers.futureAutomationsBuilt || 0) + 1;
+        if (newState.goalProgressTrackers.futureAutomationsBuilt === 1 && !newState.unlockedLoreIds.includes('lore_future_tech')) {
+            newState = gameReducer(newState, { type: 'UNLOCK_LORE', payload: 'lore_future_tech'});
+        }
+      }
       break;
     }
     case 'REMOVE_AUTOMATION_RULE':
@@ -351,6 +370,7 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
             prestigeCount: currentPrestigeCount,
              rareSeedsFoundCount: state.rareSeeds.length, // Carry over rare seed count for goal
         },
+        unlockedLoreIds: [...getInitialUnlockedLoreIds()], // Reset lore but keep defaults
       };
       // Recalculate goal statuses after prestige
         const recalculatedGoalStatus: Record<GoalID, { progress: number; completed: boolean }> = 
@@ -379,6 +399,9 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
           }
       }
       newState = gameReducer(newState, { type: 'UPDATE_GOAL_PROGRESS', payload: { goalId: "prestigeOnce", absoluteValue: currentPrestigeCount }});
+      if (currentPrestigeCount >= 1 && !newState.unlockedLoreIds.includes('lore_nexus_discovery')) {
+         newState = gameReducer(newState, { type: 'UNLOCK_LORE', payload: 'lore_nexus_discovery' });
+      }
       break;
     case 'UPDATE_SOIL_QUALITY':
       newState.soilQuality = Math.max(0, Math.min(100, state.soilQuality + action.payload));
@@ -568,6 +591,11 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
                 }
                 newState.activeQuest.status = 'completed';
                 newState.completedQuests = [...newState.completedQuests, questConfig.id];
+                 // Check for lore unlocks tied to quest completion
+                if (questConfig.id === NPC_QUESTS_CONFIG.prehistoric_findGlowshrooms.id && !newState.unlockedLoreIds.includes('lore_prehistoric_puzzle')) {
+                     // This is a placeholder, the actual unlock logic for lore_prehistoric_puzzle is on harvesting Dino Roots.
+                     // A quest could unlock a different lore entry.
+                }
             }
         }
         break;
@@ -579,6 +607,11 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
     case 'DISMISS_VISITOR':
         newState.currentVisitorId = null;
         newState.activeQuest = null; 
+        break;
+    case 'UNLOCK_LORE':
+        if (!newState.unlockedLoreIds.includes(action.payload)) {
+            newState.unlockedLoreIds = [...newState.unlockedLoreIds, action.payload];
+        }
         break;
     case 'GAME_TICK': {
       const now = Date.now();
@@ -796,8 +829,7 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
         const questConfig = NPC_QUESTS_CONFIG[newState.activeQuest.questId];
         if (questConfig && questConfig.durationMinutes && (now - newState.activeQuest.startTime) / (1000 * 60) > questConfig.durationMinutes) {
             newState = gameReducer(newState, { type: 'FAIL_QUEST' }); 
-            // Consider if visitor should be dismissed immediately or if UI handles it
-            // newState = gameReducer(newState, { type: 'DISMISS_VISITOR' });
+            newState = gameReducer(newState, { type: 'DISMISS_VISITOR' }); 
         }
       }
       newState.lastTick = now;
@@ -884,6 +916,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             synergyStats: { ...initialState.synergyStats, ...savedState.synergyStats },
             goalStatus: { ...initialGoalStatus, ...savedState.goalStatus },
             goalProgressTrackers: { ...initialState.goalProgressTrackers, ...savedState.goalProgressTrackers},
+            unlockedLoreIds: Array.isArray(savedState.unlockedLoreIds) ? savedState.unlockedLoreIds : getInitialUnlockedLoreIds(),
             lastTick: Date.now(), 
             lastUserInteractionTime: savedState.lastUserInteractionTime && savedState.lastUserInteractionTime > 0 ? savedState.lastUserInteractionTime : Date.now(),
             lastAutoPlantTime: savedState.lastAutoPlantTime && savedState.lastAutoPlantTime > 0 ? savedState.lastAutoPlantTime : Date.now(),
