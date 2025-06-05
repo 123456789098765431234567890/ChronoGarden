@@ -1,6 +1,6 @@
 
 import type { ComponentType } from 'react';
-import { Briefcase, Atom, Settings, BrainCircuit, Sprout, Home, Leaf, Clock, Droplets, FlaskConical, Scroll, Dna, Bone, Tractor, Sun, Package, Wheat, Zap, Sparkles, Coins as CoinsIcon, Power, Flower2, Carrot as CarrotIcon, Apple as AppleIcon, Wind, SunDim, Mountain, Feather as FeatherIcon, SlidersHorizontal, Rocket, Recycle, CloudRain, CloudLightning, Target, Trophy, UserCircle, Palette, CheckSquare, Gift, Award, Users, MessageCircle, BookOpen } from 'lucide-react';
+import { Briefcase, Atom, Settings, BrainCircuit, Sprout, Home, Leaf, Clock, Droplets, FlaskConical, Scroll, Dna, Bone, Tractor, Sun, Package, Wheat, Zap, Sparkles, Coins as CoinsIcon, Power, Flower2, Carrot as CarrotIcon, Apple as AppleIcon, Wind, SunDim, Mountain, Feather as FeatherIcon, SlidersHorizontal, Rocket, Recycle, CloudRain, CloudLightning, Target, Trophy, UserCircle, Palette, CheckSquare, Gift, Award, Users, MessageCircle, BookOpen, ShoppingCart } from 'lucide-react';
 
 export type EraID = "Present" | "Prehistoric" | "Medieval" | "Modern" | "Future";
 
@@ -10,6 +10,7 @@ export interface ResourceItem {
   icon: ComponentType<{ className?: string }>;
   description?: string;
   initialAmount?: number;
+  isTradable?: boolean; // For the market
 }
 
 export interface Crop {
@@ -24,6 +25,7 @@ export interface Crop {
   unlockCost?: number; // chrono-energy to unlock this crop
   specialGrowthCondition?: (gameState: any) => boolean;
   isIdleDependent?: boolean; // For Glowshroom
+  isTradableSeed?: boolean; // Can its rare seed be traded
 }
 
 export interface EraConfig {
@@ -106,7 +108,7 @@ export interface GoalConfigItem {
   description: string;
   target: number;
   reward: {
-    type: "chronoEnergy" | "resource" | "rareSeed";
+    type: "chronoEnergy" | "resource" | "rareSeed" | "chronoCoins";
     resourceId?: string; // if type is 'resource'
     amount: number;
   };
@@ -128,7 +130,7 @@ export interface QuestConfig {
   requiredWeatherId?: WeatherID; // For 'growWhileWeather'
   durationMinutes?: number; // Optional timer for quest
   reward: {
-    type: "chronoEnergy" | "rareSeed" | "coins";
+    type: "chronoEnergy" | "rareSeed" | "coins" | "chronoCoins";
     amount: number;
   };
   dialogue: {
@@ -152,7 +154,6 @@ export interface VisitorConfig {
 }
 
 export type PrestigeTierID = "Novice" | "Apprentice" | "Adept" | "Master" | "Grandmaster";
-const TreePalm = Award; // Using Award as a placeholder for TreePalm, defined before usage.
 
 export interface PrestigeTierConfig {
   id: PrestigeTierID;
@@ -178,14 +179,26 @@ export interface LoreEntry {
   isUnlockedByDefault?: boolean;
 }
 
+export interface MarketListing {
+    id: string; // Firebase push ID
+    itemName: string;
+    itemType: 'seed' | 'resource';
+    itemId: string; // Crop ID for seeds, Resource ID for resources
+    quantity: number;
+    price: number; // In ChronoCoins
+    sellerName: string;
+    timestamp: number; // serverTimestamp
+}
+
 
 export const GARDEN_PLOT_SIZE = 9;
-export const GAME_VERSION = "v0.6.0"; 
+export const GAME_VERSION = "v0.7.1"; 
 export const IDLE_THRESHOLD_SECONDS = 10;
 export const NANO_VINE_DECAY_WINDOW_SECONDS = 20;
 export const VISITOR_SPAWN_CHECK_INTERVAL_SECONDS = 60; // Check every minute
 export const QUEST_PROGRESS_SAVE_INTERVAL_SECONDS = 30; // Not actively used yet but good constant
 
+const TreePalm = Award;
 
 export const PRESTIGE_TIERS_CONFIG: Record<PrestigeTierID, PrestigeTierConfig> = {
   Novice: { id: "Novice", minPrestigeCount: 0, icon: Sprout, title: "Novice Time Gardener" },
@@ -198,47 +211,48 @@ export const PRESTIGE_TIERS_CONFIG: Record<PrestigeTierID, PrestigeTierConfig> =
 
 export const INITIAL_RESOURCES: ResourceItem[] = [
   { id: "ChronoEnergy", name: "Chrono-Energy", icon: Zap, description: "Energy to manipulate time, unlock eras, and for powerful upgrades.", initialAmount: 0 },
-  { id: "Water", name: "Water", icon: Droplets, description: "Essential for most plant life.", initialAmount: 50 },
-  { id: "Sunlight", name: "Sunlight", icon: Sun, description: "Energy from the sun, vital for photosynthesis.", initialAmount: 50 },
+  { id: "Water", name: "Water", icon: Droplets, description: "Essential for most plant life.", initialAmount: 50, isTradable: true },
+  { id: "Sunlight", name: "Sunlight", icon: Sun, description: "Energy from the sun, vital for photosynthesis.", initialAmount: 50, isTradable: true },
   { id: "Coins", name: "Coins", icon: CoinsIcon, description: "Primary currency for purchases.", initialAmount: 100 },
-  { id: "Energy", name: "Energy", icon: Power, description: "Used for automations and advanced upgrades.", initialAmount: 20 },
-  { id: "Nutrients", name: "Basic Nutrients", icon: Leaf, description: "General purpose fertilizer.", initialAmount: 20 },
-  { id: "DinoBone", name: "Dino Bone", icon: Bone, description: "Fossilized bone, a sturdy material.", initialAmount: 0 },
-  { id: "MysticSpores", name: "Mystic Spores", icon: Sparkles, description: "Ancient spores with unusual properties.", initialAmount: 0 },
+  { id: "ChronoCoins", name: "ChronoCoins", icon: CoinsIcon, description: "Special currency for market trades and rare items.", initialAmount: 10 },
+  { id: "Energy", name: "Energy", icon: Power, description: "Used for automations and advanced upgrades.", initialAmount: 20, isTradable: true },
+  { id: "Nutrients", name: "Basic Nutrients", icon: Leaf, description: "General purpose fertilizer.", initialAmount: 20, isTradable: true },
+  { id: "DinoBone", name: "Dino Bone", icon: Bone, description: "Fossilized bone, a sturdy material.", initialAmount: 0, isTradable: true },
+  { id: "MysticSpores", name: "Mystic Spores", icon: Sparkles, description: "Ancient spores with unusual properties.", initialAmount: 0, isTradable: true },
   { id: "EnergyCredits", name: "Energy Credits", icon: Zap, description: "Universal currency and power source in the Future.", initialAmount: 0 },
-  { id: "NaniteSolution", name: "Nanite Solution", icon: Atom, description: "Microscopic robots that enhance and construct.", initialAmount: 0 },
+  { id: "NaniteSolution", name: "Nanite Solution", icon: Atom, description: "Microscopic robots that enhance and construct.", initialAmount: 0, isTradable: true },
   { id: "ExoticGenes", name: "Exotic Genes", icon: Dna, description: "Advanced genetic material from Future crops.", initialAmount: 0 },
   { id: "ControlledAtmosphere", name: "Climate Control Units", icon: SunDim, description: "Maintains perfect growing conditions in domes.", initialAmount: 0 },
-  { id: "AdvancedNutrients", name: "Advanced Nutrients", icon: Briefcase, description: "Precisely formulated plant food for Modern/Future crops.", initialAmount: 0 },
+  { id: "AdvancedNutrients", name: "Advanced Nutrients", icon: Briefcase, description: "Precisely formulated plant food for Modern/Future crops.", initialAmount: 0, isTradable: true },
 ];
 
 export const ALL_CROPS_LIST: Crop[] = [
   {
     id: "carrot", name: "Carrot", description: "Fast growing, low value root vegetable.", icon: CarrotIcon,
-    growthTime: 30, cost: { "Water": 5, "Sunlight": 2 }, yield: { "Coins": 10 }, era: "Present"
+    growthTime: 30, cost: { "Water": 5, "Sunlight": 2 }, yield: { "Coins": 10 }, era: "Present", isTradableSeed: true,
   },
   {
     id: "tomato", name: "Tomato", description: "Medium speed, medium value fruit.", icon: AppleIcon,
-    growthTime: 60, cost: { "Water": 8, "Sunlight": 5 }, yield: { "Coins": 25 }, era: "Present"
+    growthTime: 60, cost: { "Water": 8, "Sunlight": 5 }, yield: { "Coins": 25 }, era: "Present", isTradableSeed: true,
   },
   {
     id: "sunflower", name: "Sunflower", description: "Slow growing, yields Sunlight.", icon: Flower2,
-    growthTime: 120, cost: { "Water": 10, "Sunlight": 1 }, yield: { "Sunlight": 50 }, era: "Present"
+    growthTime: 120, cost: { "Water": 10, "Sunlight": 1 }, yield: { "Sunlight": 50 }, era: "Present", isTradableSeed: true,
   },
-  { id: "mossfruit", name: "Mossfruit", description: "Fast growing, low water cost, yields some ChronoEnergy.", icon: Sprout, growthTime: 20, cost: { "Water": 3 }, yield: { "Coins": 5, "ChronoEnergy": 1, "MysticSpores": 1 }, era: "Prehistoric" },
-  { id: "dinoroot", name: "Dino Root", description: "Long grow time, high Energy and ChronoEnergy yield. Requires Dino Bones.", icon: Mountain, growthTime: 180, cost: { "Water": 15, "DinoBone": 1 }, yield: { "Energy": 20, "ChronoEnergy": 5, "DinoBone": 1 }, era: "Prehistoric"},
+  { id: "mossfruit", name: "Mossfruit", description: "Fast growing, low water cost, yields some ChronoEnergy.", icon: Sprout, growthTime: 20, cost: { "Water": 3 }, yield: { "Coins": 5, "ChronoEnergy": 1, "MysticSpores": 1 }, era: "Prehistoric", isTradableSeed: true, },
+  { id: "dinoroot", name: "Dino Root", description: "Long grow time, high Energy and ChronoEnergy yield. Requires Dino Bones.", icon: Mountain, growthTime: 180, cost: { "Water": 15, "DinoBone": 1 }, yield: { "Energy": 20, "ChronoEnergy": 5, "DinoBone": 1 }, era: "Prehistoric", isTradableSeed: true,},
   { 
     id: "glowshroom", name: "Glowshroom", description: "Grows best when undisturbed, yields ChronoEnergy and Mystic Spores.", icon: Sparkles, growthTime: 100, cost: { "Water": 5, "MysticSpores": 1 }, yield: { "ChronoEnergy": 10, "MysticSpores": 3 }, era: "Prehistoric",
-    isIdleDependent: true,
+    isIdleDependent: true, isTradableSeed: true,
   },
-  { id: "mandrake", name: "Mandrake", description: "A root with mystical properties, prized by alchemists.", icon: Scroll, growthTime: 180, cost: { "Water": 15, "Nutrients": 5 }, yield: { "Coins": 100, "ChronoEnergy": 2 }, era: "Medieval" },
-  { id: "hydrocorn", name: "Hydroponic Corn", description: "Genetically modified corn that grows rapidly in hydroponic systems.", icon: Wheat, growthTime: 90, cost: { "Water": 25, "AdvancedNutrients": 2 }, yield: { "Coins": 150 }, era: "Modern" },
-  { id: "synthbloom", name: "Synth Bloom", description: "High-tech hybrid flower, needs Energy instead of Water. Produces valuable Energy Credits.", icon: Rocket, growthTime: 150, cost: { "Energy": 20, "AdvancedNutrients": 5 }, yield: { "EnergyCredits": 50, "ChronoEnergy": 3 }, era: "Future" },
-  { id: "nanovine", name: "Nano Vine", description: "Grows extremely fast using nanites, produces perfect produce and more nanites. Harvest quickly or it decays!", icon: Atom, growthTime: 15, cost: { "NaniteSolution": 2, "EnergyCredits": 10 }, yield: { "Coins": 75, "NaniteSolution": 3 }, era: "Future" },
+  { id: "mandrake", name: "Mandrake", description: "A root with mystical properties, prized by alchemists.", icon: Scroll, growthTime: 180, cost: { "Water": 15, "Nutrients": 5 }, yield: { "Coins": 100, "ChronoEnergy": 2 }, era: "Medieval", isTradableSeed: true, },
+  { id: "hydrocorn", name: "Hydroponic Corn", description: "Genetically modified corn that grows rapidly in hydroponic systems.", icon: Wheat, growthTime: 90, cost: { "Water": 25, "AdvancedNutrients": 2 }, yield: { "Coins": 150 }, era: "Modern", isTradableSeed: true, },
+  { id: "synthbloom", name: "Synth Bloom", description: "High-tech hybrid flower, needs Energy instead of Water. Produces valuable Energy Credits.", icon: Rocket, growthTime: 150, cost: { "Energy": 20, "AdvancedNutrients": 5 }, yield: { "EnergyCredits": 50, "ChronoEnergy": 3 }, era: "Future", isTradableSeed: true, },
+  { id: "nanovine", name: "Nano Vine", description: "Grows extremely fast using nanites, produces perfect produce and more nanites. Harvest quickly or it decays!", icon: Atom, growthTime: 15, cost: { "NaniteSolution": 2, "EnergyCredits": 10 }, yield: { "Coins": 75, "NaniteSolution": 3 }, era: "Future", isTradableSeed: true, },
   {
     id: "quantumbud", name: "Quantum Bud", description: "Grows only when other eras are thriving. Yields rare Exotic Genes and significant ChronoEnergy.", icon: BrainCircuit,
     growthTime: 300, cost: { "ChronoEnergy": 25, "EnergyCredits": 100 }, yield: { "ExoticGenes": 1, "ChronoEnergy": 50 }, era: "Future",
-    specialGrowthCondition: (gameState) => (gameState.synergyStats.cropsHarvestedPresent >= 50 && gameState.synergyStats.cropsHarvestedPrehistoric >= 25)
+    specialGrowthCondition: (gameState) => (gameState.synergyStats.cropsHarvestedPresent >= 50 && gameState.synergyStats.cropsHarvestedPrehistoric >= 25), isTradableSeed: true,
   },
 ];
 
@@ -267,8 +281,8 @@ export const ERAS: Record<EraID, EraConfig> = {
     unlockCost: 100, 
     availableCrops: ["mossfruit", "dinoroot", "glowshroom"],
     eraSpecificResources: [
-       { id: "DinoBone", name: "Dino Bone", icon: Bone, description: "Fossilized bone, a sturdy material." },
-       { id: "MysticSpores", name: "Mystic Spores", icon: Sparkles, description: "Ancient spores with unusual properties." },
+       { id: "DinoBone", name: "Dino Bone", icon: Bone, description: "Fossilized bone, a sturdy material.", isTradable: true },
+       { id: "MysticSpores", name: "Mystic Spores", icon: Sparkles, description: "Ancient spores with unusual properties.", isTradable: true },
     ],
     specialMechanic: "Utilize DinoBones and MysticSpores. Harvest crops to gain ChronoEnergy. Glowshrooms require player idle time.",
   },
@@ -301,10 +315,10 @@ export const ERAS: Record<EraID, EraConfig> = {
     availableCrops: ["synthbloom", "nanovine", "quantumbud"],
     eraSpecificResources: [
       { id: "EnergyCredits", name: "Energy Credits", icon: Zap, description: "Universal currency and power source in the Future." },
-      { id: "NaniteSolution", name: "Nanite Solution", icon: Atom, description: "Microscopic robots that enhance and construct." },
+      { id: "NaniteSolution", name: "Nanite Solution", icon: Atom, description: "Microscopic robots that enhance and construct.", isTradable: true },
       { id: "ExoticGenes", name: "Exotic Genes", icon: Dna, description: "Advanced genetic material from Future crops." },
       { id: "ControlledAtmosphere", name: "Atmo Regulator", icon: Wind, description: "Device to manage dome atmosphere, used by some plants." },
-      { id: "AdvancedNutrients", name: "Advanced Nutrients", icon: Briefcase, description: "Precisely formulated plant food." },
+      { id: "AdvancedNutrients", name: "Advanced Nutrients", icon: Briefcase, description: "Precisely formulated plant food.", isTradable: true },
     ],
     specialMechanic: "AI crop engineers provide optimization. Climate domes allow precise environmental control. Gene splicing for hybrid crops. Nano Vines decay quickly if not harvested.",
   },
@@ -607,7 +621,7 @@ export const NPC_QUESTS_CONFIG: Record<string, QuestConfig> = {
     id: "present_harvestCarrots", title: "Carrot Craving", era: "Present",
     description: "Gardener Greg really wants some carrots. Harvest 20 Carrots for him within 3 minutes.",
     type: 'harvestSpecificCrop', targetCropId: 'carrot', targetAmount: 20, durationMinutes: 3,
-    reward: { type: 'coins', amount: 100 },
+    reward: { type: 'chronoCoins', amount: 50 },
     dialogue: {
       greeting: "Howdy, partner! Nice lookin' garden. Say, I'm starvin'! Could you fetch me 20 carrots? I'm on a tight schedule!",
       questAccepted: "Great! But be quick, I ain't got all day!",
@@ -692,11 +706,11 @@ export interface GameState {
   currentEra: EraID;
   unlockedEras: EraID[];
   chronoEnergy: number;
-  resources: Record<string, number>;
+  resources: Record<string, number>; // Includes ChronoCoins
   plotSlots: Array<PlantedCrop | null>;
   automationRules: AutomationRule[];
   activeAutomations: Record<string, boolean>;
-  rareSeeds: string[];
+  rareSeeds: string[]; // array of Crop IDs
   soilQuality: number;
   isLoadingAiSuggestion: boolean;
   aiSuggestion: string | null;
@@ -718,7 +732,7 @@ export interface GameState {
     carrotsHarvested: number;
     prehistoricUnlocked: number;
     rareSeedsFoundCount: number;
-    prestigeCount: number; // Ensure this is included
+    prestigeCount: number; 
     dinoRootsHarvested?: number;
     futureAutomationsBuilt?: number;
     [key: string]: number | undefined; 
@@ -836,3 +850,14 @@ export const getInitialUnlockedLoreIds = (): string[] => {
     .filter(entry => entry.isUnlockedByDefault)
     .map(entry => entry.id);
 };
+
+// Helper function to get the display name for a market item
+export const getMarketItemDisplayName = (itemType: 'seed' | 'resource', itemId: string): string => {
+    if (itemType === 'seed') {
+        return `${ALL_CROPS_MAP[itemId]?.name || 'Unknown'} Seed (Rare)`;
+    }
+    return ALL_GAME_RESOURCES_MAP[itemId]?.name || 'Unknown Resource';
+};
+
+export const TRADABLE_RESOURCES_FOR_MARKET = Object.values(ALL_GAME_RESOURCES_MAP).filter(res => res.isTradable);
+

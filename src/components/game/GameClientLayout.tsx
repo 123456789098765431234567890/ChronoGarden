@@ -26,10 +26,11 @@ import GoalsPanel from '@/components/game/GoalsPanel';
 import ProfilePanel from '@/components/game/ProfilePanel'; 
 import LeaderboardPanel from '@/components/game/LeaderboardPanel'; 
 import VisitorPanel from '@/components/game/VisitorPanel'; 
-import LoreBookPanel from '@/components/game/LoreBookPanel'; // New Lore Panel
+import LoreBookPanel from '@/components/game/LoreBookPanel'; 
+import MarketPanel from '@/components/game/MarketPanel'; // New Market Panel
 import { useGame } from '@/contexts/GameContext';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ShieldQuestion, Droplets, MessageSquare, Award, Link2, Target as TargetIcon, Users, BarChart3, UserCircle2Icon, Scroll as ScrollIcon } from 'lucide-react'; 
+import { ShieldQuestion, Droplets, MessageSquare, Award, Link2, Target as TargetIcon, Users, BarChart3, UserCircle2Icon, Scroll as ScrollIcon, ShoppingCart } from 'lucide-react'; 
 import { ERAS, GAME_VERSION, GOALS_CONFIG, LORE_CONFIG, NPC_QUESTS_CONFIG, NPC_VISITORS_CONFIG } from '@/config/gameConfig';
 import type { GoalID } from '@/config/gameConfig';
 import { useToast } from "@/hooks/use-toast";
@@ -131,13 +132,14 @@ export default function GameClientLayout() {
         <AppHeader />
         <div className="p-2 sm:p-4 md:p-6 flex-grow">
           <Tabs defaultValue="garden" className="w-full" value={activeTab} onValueChange={(newTab) => { setActiveTab(newTab); dispatch({type: 'USER_INTERACTION'})}}>
-            <TabsList className="grid w-full grid-cols-5 sm:grid-cols-6 md:grid-cols-11 mb-4 text-xs sm:text-sm">
+            <TabsList className="grid w-full grid-cols-5 sm:grid-cols-7 md:grid-cols-12 mb-4 text-xs sm:text-sm">
               <TabsTrigger value="garden" className="font-headline">Garden</TabsTrigger>
               <TabsTrigger value="visitors" className="font-headline flex items-center"><Users className="w-3 h-3 mr-1 sm:mr-1" />Visitors</TabsTrigger>
               <TabsTrigger value="automation" className="font-headline">Automation</TabsTrigger>
               <TabsTrigger value="upgrades" className="font-headline">Upgrades</TabsTrigger>
               <TabsTrigger value="chrono_nexus" className="font-headline flex items-center"><Award className="w-3 h-3 mr-1 sm:mr-1" /> Nexus</TabsTrigger>
               <TabsTrigger value="synergies" className="font-headline flex items-center"><Link2 className="w-3 h-3 mr-1 sm:mr-1" />Synergies</TabsTrigger>
+              <TabsTrigger value="market" className="font-headline flex items-center"><ShoppingCart className="w-3 h-3 mr-1 sm:mr-1" />Market</TabsTrigger>
               <TabsTrigger value="goals" className="font-headline flex items-center"><TargetIcon className="w-3 h-3 mr-1 sm:mr-1" />Goals</TabsTrigger>
               <TabsTrigger value="lore" className="font-headline flex items-center"><ScrollIcon className="w-3 h-3 mr-1 sm:mr-1" />Lore</TabsTrigger>
               <TabsTrigger value="profile" className="font-headline flex items-center"><UserCircle2Icon className="w-3 h-3 mr-1 sm:mr-1" />Profile</TabsTrigger>
@@ -166,6 +168,9 @@ export default function GameClientLayout() {
             </TabsContent>
             <TabsContent value="synergies">
               <SynergyPanel />
+            </TabsContent>
+            <TabsContent value="market">
+                <MarketPanel />
             </TabsContent>
              <TabsContent value="goals">
               <GoalsPanel />
@@ -212,22 +217,23 @@ export default function GameClientLayout() {
             <p className="text-sm mb-2">Cultivate plants across eras, automate, and unlock powerful upgrades!</p>
             <ul className="list-disc list-inside text-sm space-y-1 mb-4">
               <li>**Eras & Navigation:** Unlock and switch between eras using the Time Portal (left sidebar).</li>
-              <li>**Resources:** Manage shared resources (Water, Coins) and era-specific ones. Displayed in sidebar.</li>
+              <li>**Resources:** Manage shared resources (Water, Coins) and era-specific ones. Displayed in sidebar and top bar. ChronoCoins are for the market.</li>
               <li>**Garden Tab:** Plant/harvest crops. Progress bars show growth. Special crops like Glowshroom (needs idle) and NanoVine (decays fast) exist.</li>
               <li>**Visitors Tab:** Occasionally, visitors from the current era may appear with quests for rewards. Some quests are timed!</li>
               <li>**Automation Tab:** Build era-specific machines to automate tasks.</li>
               <li>**Upgrades Tab:** Purchase era-specific upgrades. These reset on Prestige.</li>
               <li>**Chrono Nexus Tab:** (Unlocks after 1 Prestige) Spend Chrono-Energy & Rare Seeds for permanent upgrades.</li>
               <li>**Synergies Tab:** Discover passive bonuses by achieving milestones across eras.</li>
+              <li>**Market Tab:** View and list items (Rare Seeds, select Resources) for ChronoCoins with other players (via Firebase). Buying is not yet enabled.</li>
               <li>**Goals Tab:** Complete objectives for rewards like Chrono-Energy and Rare Seeds.</li>
               <li>**Lore Tab:** Uncover fragments of the ChronoGarden's story as you progress.</li>
               <li>**Profile Tab:** Customize your Player and Garden Name. Export/Import basic garden data.</li>
-              <li>**Leaderboard Tab:** View your rank against other gardeners based on various game stats (requires setting Player Name).</li>
+              <li>**Leaderboard Tab:** View your rank against other gardeners based on various game stats (requires setting Player Name, uses Firebase).</li>
               <li>**AI Advisor Tab:** Get tips for your current era.</li>
               <li>**Weather:** Random weather events (Clear, Sunny, Rainy, Temporal Storm, Solar Eclipse) affect gameplay. Check the top bar.</li>
-              <li>**Rare Seeds:** Small chance on harvest. Grant permanent boosts (faster growth, +1 yield, auto-plant chance).</li>
-              <li>**Prestige (Bottom Left Sidebar):** Reset progress (except Chrono-Energy, Rare Seeds, Permanent Upgrades, Profile names, completed quests, unlocked lore) to gain long-term advantages. Unlocks Chrono Nexus and advances Prestige Tier.</li>
-              <li>**Save/Load:** Game saves automatically to your browser.</li>
+              <li>**Rare Seeds:** Small chance on harvest. Grant permanent boosts (faster growth, +1 yield, auto-plant chance). Can be traded on Market.</li>
+              <li>**Prestige (Bottom Left Sidebar):** Reset progress (except Chrono-Energy, ChronoCoins, Rare Seeds, Permanent Upgrades, Profile names, completed quests, unlocked lore) to gain long-term advantages. Unlocks Chrono Nexus and advances Prestige Tier. Grants ChronoCoins.</li>
+              <li>**Save/Load:** Game saves automatically to your browser. Leaderboard and Market listings use Firebase.</li>
             </ul>
             <Button onClick={() => { setIsHelpOpen(false); dispatch({type: 'USER_INTERACTION'})}} className="w-full">Close</Button>
           </div>

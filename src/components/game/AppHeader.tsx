@@ -6,7 +6,7 @@ import { SidebarTrigger } from '@/components/ui/sidebar';
 import ChronoLeafIcon from '@/components/icons/ChronoLeafIcon';
 import { useGame } from '@/contexts/GameContext';
 import { ERAS, ALL_GAME_RESOURCES_MAP, WEATHER_CONFIG } from '@/config/gameConfig';
-import { Zap, Droplets, Sun, Coins, Power, Cloud } from 'lucide-react'; // Removed specific weather icons, will use WeatherIcon
+import { Zap, Droplets, Sun, Coins as CoinsIcon, Power, Cloud, ShoppingCart } from 'lucide-react'; 
 import { ThemeToggle } from '@/components/ui/theme-toggle'; 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -19,7 +19,8 @@ export default function AppHeader() {
   const resourcesToShow = [
     { id: "Water", icon: Droplets },
     { id: "Sunlight", icon: Sun },
-    { id: "Coins", icon: Coins },
+    { id: "Coins", icon: CoinsIcon },
+    { id: "ChronoCoins", icon: CoinsIcon, color: "text-amber-500" }, // Differentiate ChronoCoins
     { id: "Energy", icon: Power },
     { id: "ChronoEnergy", icon: Zap, color: "text-yellow-500" },
   ];
@@ -69,7 +70,7 @@ export default function AppHeader() {
               const resourceConfig = ALL_GAME_RESOURCES_MAP[res.id];
               return (
                 <div key={res.id} className="flex items-center px-1 sm:px-2 py-0.5 rounded bg-muted/30" title={resourceConfig?.name || res.id}>
-                  <ResIcon className={`h-3 w-3 sm:h-4 sm:w-4 mr-1 shrink-0 ${res.color || 'text-muted-foreground'}`} />
+                  <ResIcon className={`h-3 w-3 sm:h-4 sm:w-4 mr-1 shrink-0 ${res.color || (res.id === 'ChronoCoins' ? 'text-amber-500' : 'text-muted-foreground')}`} />
                   <span className="font-mono text-xs sm:text-sm text-foreground">
                     {Math.floor(state.resources[res.id] || 0)}
                   </span>
@@ -84,4 +85,3 @@ export default function AppHeader() {
     </header>
   );
 }
-

@@ -14,9 +14,9 @@ import {
     NPC_VISITORS_CONFIG, NPC_QUESTS_CONFIG, VISITOR_SPAWN_CHECK_INTERVAL_SECONDS,
     PRESTIGE_TIERS_CONFIG
 } from '@/config/gameConfig';
-import type { PlantedCrop } from '@/config/gameConfig';
-import { database } from '@/lib/firebase'; // Firebase integration
-import { ref, set, serverTimestamp } from 'firebase/database'; // Firebase RTDB functions
+import type { PlantedCrop, MarketListing } from '@/config/gameConfig';
+import { database } from '@/lib/firebase'; 
+import { ref, set, serverTimestamp, push, onValue } from 'firebase/database'; 
 
 
 type GameState = ConfigGameState;
@@ -28,12 +28,14 @@ const createDefaultState = (): GameState => {
       acc[goalId as GoalID] = { progress: 0, completed: false };
       return acc;
     }, {} as Record<GoalID, { progress: number; completed: boolean }>);
-
+  
+  const initialResources = { ...INITIAL_RESOURCES.reduce((acc, r) => ({...acc, [r.id]: r.initialAmount ?? 0}), {}) };
+  
   return {
     currentEra: 'Present',
     unlockedEras: ['Present'],
     chronoEnergy: 0,
-    resources: { ...INITIAL_RESOURCES.reduce((acc, r) => ({...acc, [r.id]: r.initialAmount ?? 0}), {}) },
+    resources: initialResources,
     plotSlots: Array(GARDEN_PLOT_SIZE).fill(null),
     automationRules: [],
     activeAutomations: {},
@@ -107,7 +109,8 @@ type GameAction =
   | { type: 'COMPLETE_QUEST' }
   | { type: 'FAIL_QUEST' } 
   | { type: 'DISMISS_VISITOR' }
-  | { type: 'UNLOCK_LORE'; payload: string } // Lore ID
+  | { type: 'UNLOCK_LORE'; payload: string } 
+  | { type: 'LIST_ITEM_ON_MARKET'; payload: { itemType: 'seed' | 'resource'; itemId: string; quantity: number } }
   | { type: 'GAME_TICK' };
 
 
@@ -350,6 +353,10 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       newState = {
         ...defaultForPrestige, 
         chronoEnergy: state.chronoEnergy, 
+        resources: {
+            ...defaultForPrestige.resources, // Start with default resources
+            ChronoCoins: (state.resources.ChronoCoins || 0) + (state.prestigeCount + 1) * 25, // Add prestige bonus ChronoCoins
+        },
         totalChronoEnergyEarned: state.totalChronoEnergyEarned,
         totalCropsHarvestedAllTime: state.totalCropsHarvestedAllTime,
         playerName: state.playerName,
@@ -368,12 +375,12 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
         goalProgressTrackers: { 
             ...defaultForPrestige.goalProgressTrackers,
             prestigeCount: currentPrestigeCount,
-             rareSeedsFoundCount: state.rareSeeds.length, // Carry over rare seed count for goal
+             rareSeedsFoundCount: state.rareSeeds.length, 
         },
-        unlockedLoreIds: [...getInitialUnlockedLoreIds()], // Reset lore but keep defaults
+        unlockedLoreIds: [...getInitialUnlockedLoreIds()], 
       };
-      // Recalculate goal statuses after prestige
-        const recalculatedGoalStatus: Record<GoalID, { progress: number; completed: boolean }> = 
+      
+      const recalculatedGoalStatus: Record<GoalID, { progress: number; completed: boolean }> = 
         Object.keys(GOALS_CONFIG).reduce((acc, goalId) => {
             const gId = goalId as GoalID;
             const goalConfig = GOALS_CONFIG[gId];
@@ -383,7 +390,6 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
             } else if (goalConfig.statToTrack === 'rareSeedsFoundCount') {
                 currentProgress = newState.rareSeeds.length;
             } else {
-                 // For other goals, progress resets unless specified otherwise
                 currentProgress = defaultForPrestige.goalStatus[gId]?.progress || 0;
             }
             acc[gId] = { progress: currentProgress, completed: currentProgress >= goalConfig.target };
@@ -488,7 +494,7 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       } else if (goalConfig.statToTrack === "prestigeCount") {
         currentProgressValue = state.prestigeCount + (increment || 0); 
       } else if (goalConfig.statToTrack === "rareSeedsFoundCount"){
-        currentProgressValue = state.rareSeeds.length; // Use the length of the array
+        currentProgressValue = state.rareSeeds.length; 
       } else {
         currentProgressValue = (state.goalProgressTrackers[goalConfig.statToTrack] || 0) + (increment || 0);
       }
@@ -515,6 +521,8 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
         newState = gameReducer(newState, { type: 'ADD_CHRONO_ENERGY', payload: goalConfig.reward.amount});
       } else if (goalConfig.reward.type === 'resource' && goalConfig.reward.resourceId) {
         newState.resources[goalConfig.reward.resourceId] = (newState.resources[goalConfig.reward.resourceId] || 0) + goalConfig.reward.amount;
+      } else if (goalConfig.reward.type === 'chronoCoins') {
+         newState.resources.ChronoCoins = (newState.resources.ChronoCoins || 0) + goalConfig.reward.amount;
       } else if (goalConfig.reward.type === 'rareSeed') {
         const availableCropsForRareSeed = ALL_CROPS_LIST.filter(c => !state.rareSeeds.includes(c.id));
         if (availableCropsForRareSeed.length > 0) {
@@ -581,6 +589,8 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
                     newState = gameReducer(newState, { type: 'ADD_CHRONO_ENERGY', payload: questConfig.reward.amount });
                 } else if (questConfig.reward.type === 'coins') {
                     newState.resources.Coins = (newState.resources.Coins || 0) + questConfig.reward.amount;
+                } else if (questConfig.reward.type === 'chronoCoins') {
+                     newState.resources.ChronoCoins = (newState.resources.ChronoCoins || 0) + questConfig.reward.amount;
                 } else if (questConfig.reward.type === 'rareSeed') {
                     const availableCropsForRareSeed = ALL_CROPS_LIST.filter(c => !newState.rareSeeds.includes(c.id));
                     if (availableCropsForRareSeed.length > 0) {
@@ -591,10 +601,8 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
                 }
                 newState.activeQuest.status = 'completed';
                 newState.completedQuests = [...newState.completedQuests, questConfig.id];
-                 // Check for lore unlocks tied to quest completion
                 if (questConfig.id === NPC_QUESTS_CONFIG.prehistoric_findGlowshrooms.id && !newState.unlockedLoreIds.includes('lore_prehistoric_puzzle')) {
-                     // This is a placeholder, the actual unlock logic for lore_prehistoric_puzzle is on harvesting Dino Roots.
-                     // A quest could unlock a different lore entry.
+                     
                 }
             }
         }
@@ -613,6 +621,31 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
             newState.unlockedLoreIds = [...newState.unlockedLoreIds, action.payload];
         }
         break;
+    case 'LIST_ITEM_ON_MARKET': {
+        const { itemType, itemId, quantity } = action.payload;
+        if (itemType === 'seed') {
+            const seedIndex = newState.rareSeeds.indexOf(itemId);
+            if (seedIndex > -1) {
+                // For seeds, we assume listing 1 rare seed. Quantity isn't directly used for deduction here.
+                // A more robust system might have quantities of rare seeds.
+                const newRareSeeds = [...newState.rareSeeds];
+                newRareSeeds.splice(seedIndex, 1);
+                newState.rareSeeds = newRareSeeds;
+            } else {
+                return state; // Player doesn't have the seed
+            }
+        } else if (itemType === 'resource') {
+            if ((newState.resources[itemId] || 0) >= quantity) {
+                newState.resources = {
+                    ...newState.resources,
+                    [itemId]: (newState.resources[itemId] || 0) - quantity,
+                };
+            } else {
+                return state; // Not enough resource
+            }
+        }
+        break;
+    }
     case 'GAME_TICK': {
       const now = Date.now();
       if (state.lastTick === 0) { 
@@ -1027,28 +1060,23 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  // Effect to update Firebase leaderboard
   useEffect(() => {
     if (typeof window !== 'undefined' && state.playerName && state.playerName !== "Time Gardener") {
       const updateLeaderboard = async () => {
         try {
           const playerData: LeaderboardEntry = {
-            id: state.playerName, // Using playerName as ID for simplicity
+            id: state.playerName, 
             name: state.playerName,
             totalCropsHarvested: state.totalCropsHarvestedAllTime || 0,
             prestigeCount: state.prestigeCount || 0,
             totalChronoEnergyEarned: Math.floor(state.totalChronoEnergyEarned || 0),
-            lastUpdate: serverTimestamp() as unknown as number // Firebase server timestamp
+            lastUpdate: serverTimestamp() as unknown as number 
           };
-          // Using set to overwrite/create the player's entry
           await set(ref(database, `leaderboard/${state.playerName}`), playerData);
         } catch (error) {
           console.error("Error updating leaderboard:", error);
         }
       };
-      
-      // Debounce or call directly - for now, direct call on relevant stat changes
-      // A more sophisticated approach might debounce updates.
       updateLeaderboard();
     }
   }, [state.totalCropsHarvestedAllTime, state.prestigeCount, state.totalChronoEnergyEarned, state.playerName]);
