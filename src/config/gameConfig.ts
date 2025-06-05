@@ -1,6 +1,6 @@
 
 import type { ComponentType } from 'react';
-import { Briefcase, Atom, Settings, BrainCircuit, Sprout, Home, Leaf, Clock, Droplets, FlaskConical, Scroll, Dna, Bone, Tractor, Sun, Package, Wheat, Zap, Sparkles, Coins as CoinsIcon, Power, Flower2, Carrot as CarrotIcon, Apple as AppleIcon, Wind, SunDim, Mountain, Feather as FeatherIcon, SlidersHorizontal, Rocket, Recycle, CloudRain, Target, Trophy } from 'lucide-react'; // Added CloudRain, Target, Trophy
+import { Briefcase, Atom, Settings, BrainCircuit, Sprout, Home, Leaf, Clock, Droplets, FlaskConical, Scroll, Dna, Bone, Tractor, Sun, Package, Wheat, Zap, Sparkles, Coins as CoinsIcon, Power, Flower2, Carrot as CarrotIcon, Apple as AppleIcon, Wind, SunDim, Mountain, Feather as FeatherIcon, SlidersHorizontal, Rocket, Recycle, CloudRain, CloudLightning, Target, Trophy } from 'lucide-react'; // Added CloudLightning
 
 export type EraID = "Present" | "Prehistoric" | "Medieval" | "Modern" | "Future";
 
@@ -22,7 +22,8 @@ export interface Crop {
   yield: Record<string, number>; // resourceId: amount
   era: EraID; // Indicates which era this crop primarily belongs to
   unlockCost?: number; // chrono-energy to unlock this crop
-  specialGrowthCondition?: (gameState: any) => boolean; // For QuantumBud
+  specialGrowthCondition?: (gameState: any) => boolean;
+  isIdleDependent?: boolean; // For Glowshroom
 }
 
 export interface EraConfig {
@@ -79,7 +80,7 @@ export interface SynergyConfig {
   appliesTo: 'futureChronoEnergyYield' | 'presentWaterCost' | 'prehistoricGrowthSpeed'; // Example application points
 }
 
-export type WeatherID = "clear" | "sunny" | "rainy"; // Add "stormy", "eclipse" later
+export type WeatherID = "clear" | "sunny" | "rainy" | "stormy" | "solarEclipse";
 
 export interface WeatherConfigItem {
   id: WeatherID;
@@ -88,11 +89,13 @@ export interface WeatherConfigItem {
   icon: ComponentType<{ className?: string }>;
   durationSeconds: { min: number; max: number };
   effects: {
-    sunlightFactor?: number; // Multiplier for passive sunlight
-    waterCostFactor?: number; // Multiplier for water cost when planting
-    // growthSpeedFactor?: number; // For stormy
-    // automationSpeedFactor?: number; // For stormy
+    sunlightFactor?: number;
+    waterCostFactor?: number;
+    globalGrowthSpeedFactor?: number; // For stormy
+    automationTickMultiplier?: number; // For stormy, e.g., 1.5 means 1.5x longer ticks
+    futureCropGrowthFactor?: number; // For solar eclipse
   };
+  rarityWeight?: number; // For weighted random selection
 }
 
 export type GoalID = "harvest10Carrots" | "prestigeOnce" | "unlockPrehistoric" | "find3RareSeeds";
@@ -108,12 +111,14 @@ export interface GoalConfigItem {
     amount: number;
   };
   icon: ComponentType<{ className?: string }>;
-  statToTrack: keyof GameState['goalProgressTrackers']; // Points to specific tracker in GameState
+  statToTrack: keyof GameState['goalProgressTrackers'];
 }
 
 
-export const GARDEN_PLOT_SIZE = 9; // 3x3 grid
-export const GAME_VERSION = "v0.4.0"; // Updated Version
+export const GARDEN_PLOT_SIZE = 9;
+export const GAME_VERSION = "v0.5.0"; // Updated Version
+export const IDLE_THRESHOLD_SECONDS = 10; // For Glowshroom
+export const NANO_VINE_DECAY_WINDOW_SECONDS = 20; // After maturity for NanoVine
 
 export const INITIAL_RESOURCES: ResourceItem[] = [
   { id: "ChronoEnergy", name: "Chrono-Energy", icon: Zap, description: "Energy to manipulate time, unlock eras, and for powerful upgrades.", initialAmount: 0 },
@@ -122,10 +127,8 @@ export const INITIAL_RESOURCES: ResourceItem[] = [
   { id: "Coins", name: "Coins", icon: CoinsIcon, description: "Primary currency for purchases.", initialAmount: 100 },
   { id: "Energy", name: "Energy", icon: Power, description: "Used for automations and advanced upgrades.", initialAmount: 20 },
   { id: "Nutrients", name: "Basic Nutrients", icon: Leaf, description: "General purpose fertilizer.", initialAmount: 20 },
-  // Prehistoric specific resources
   { id: "DinoBone", name: "Dino Bone", icon: Bone, description: "Fossilized bone, a sturdy material.", initialAmount: 0 },
   { id: "MysticSpores", name: "Mystic Spores", icon: Sparkles, description: "Ancient spores with unusual properties.", initialAmount: 0 },
-  // Future specific resources (will be added to ALL_GAME_RESOURCES_MAP dynamically if not here)
   { id: "EnergyCredits", name: "Energy Credits", icon: Zap, description: "Universal currency and power source in the Future.", initialAmount: 0 },
   { id: "NaniteSolution", name: "Nanite Solution", icon: Atom, description: "Microscopic robots that enhance and construct.", initialAmount: 0 },
   { id: "ExoticGenes", name: "Exotic Genes", icon: Dna, description: "Advanced genetic material from Future crops.", initialAmount: 0 },
@@ -134,7 +137,6 @@ export const INITIAL_RESOURCES: ResourceItem[] = [
 ];
 
 export const ALL_CROPS_LIST: Crop[] = [
-  // Present
   {
     id: "carrot", name: "Carrot", description: "Fast growing, low value root vegetable.", icon: CarrotIcon,
     growthTime: 30, cost: { "Water": 5, "Sunlight": 2 }, yield: { "Coins": 10 }, era: "Present"
@@ -147,17 +149,16 @@ export const ALL_CROPS_LIST: Crop[] = [
     id: "sunflower", name: "Sunflower", description: "Slow growing, yields Sunlight.", icon: Flower2,
     growthTime: 120, cost: { "Water": 10, "Sunlight": 1 }, yield: { "Sunlight": 50 }, era: "Present"
   },
-  // Prehistoric
   { id: "mossfruit", name: "Mossfruit", description: "Fast growing, low water cost, yields some ChronoEnergy.", icon: Sprout, growthTime: 20, cost: { "Water": 3 }, yield: { "Coins": 5, "ChronoEnergy": 1, "MysticSpores": 1 }, era: "Prehistoric" },
   { id: "dinoroot", name: "Dino Root", description: "Long grow time, high Energy and ChronoEnergy yield. Requires Dino Bones.", icon: Mountain, growthTime: 180, cost: { "Water": 15, "DinoBone": 1 }, yield: { "Energy": 20, "ChronoEnergy": 5, "DinoBone": 1 }, era: "Prehistoric"},
-  { id: "glowshroom", name: "Glowshroom", description: "Grows in the dark depths, yields ChronoEnergy and Mystic Spores.", icon: Sparkles, growthTime: 100, cost: { "Water": 5, "MysticSpores": 1 }, yield: { "ChronoEnergy": 10, "MysticSpores": 3 }, era: "Prehistoric"},
-  // Medieval (placeholder, to be detailed in a future phase)
+  { 
+    id: "glowshroom", name: "Glowshroom", description: "Grows best when undisturbed, yields ChronoEnergy and Mystic Spores.", icon: Sparkles, growthTime: 100, cost: { "Water": 5, "MysticSpores": 1 }, yield: { "ChronoEnergy": 10, "MysticSpores": 3 }, era: "Prehistoric",
+    isIdleDependent: true,
+  },
   { id: "mandrake", name: "Mandrake", description: "A root with mystical properties, prized by alchemists.", icon: Scroll, growthTime: 180, cost: { "Water": 15, "Nutrients": 5 }, yield: { "Coins": 100, "ChronoEnergy": 2 }, era: "Medieval" },
-  // Modern (placeholder, to be detailed in a future phase)
   { id: "hydrocorn", name: "Hydroponic Corn", description: "Genetically modified corn that grows rapidly in hydroponic systems.", icon: Wheat, growthTime: 90, cost: { "Water": 25, "AdvancedNutrients": 2 }, yield: { "Coins": 150 }, era: "Modern" },
-  // Future
   { id: "synthbloom", name: "Synth Bloom", description: "High-tech hybrid flower, needs Energy instead of Water. Produces valuable Energy Credits.", icon: Rocket, growthTime: 150, cost: { "Energy": 20, "AdvancedNutrients": 5 }, yield: { "EnergyCredits": 50, "ChronoEnergy": 3 }, era: "Future" },
-  { id: "nanovine", name: "Nano Vine", description: "Grows extremely fast using nanites, produces perfect produce and more nanites.", icon: Atom, growthTime: 15, cost: { "NaniteSolution": 2, "EnergyCredits": 10 }, yield: { "Coins": 75, "NaniteSolution": 3 }, era: "Future" },
+  { id: "nanovine", name: "Nano Vine", description: "Grows extremely fast using nanites, produces perfect produce and more nanites. Harvest quickly or it decays!", icon: Atom, growthTime: 15, cost: { "NaniteSolution": 2, "EnergyCredits": 10 }, yield: { "Coins": 75, "NaniteSolution": 3 }, era: "Future" },
   {
     id: "quantumbud", name: "Quantum Bud", description: "Grows only when other eras are thriving. Yields rare Exotic Genes and significant ChronoEnergy.", icon: BrainCircuit,
     growthTime: 300, cost: { "ChronoEnergy": 25, "EnergyCredits": 100 }, yield: { "ExoticGenes": 1, "ChronoEnergy": 50 }, era: "Future",
@@ -258,7 +259,6 @@ export const ALL_GAME_RESOURCES_MAP: Record<string, ResourceItem> = {
 
 
 export const AUTOMATION_RULES_CONFIG: AutomationRule[] = [
-  // Present
   {
     id: "sprinkler_present",
     name: "Basic Sprinkler",
@@ -277,7 +277,6 @@ export const AUTOMATION_RULES_CONFIG: AutomationRule[] = [
     isPassive: true,
     era: "Present",
   },
-  // Prehistoric
   {
     id: "raptorharvester_prehistoric",
     name: "Raptor Harvester",
@@ -296,13 +295,12 @@ export const AUTOMATION_RULES_CONFIG: AutomationRule[] = [
     isPassive: true,
     era: "Prehistoric",
   },
-  // Future
   {
     id: "autoplanter_ai_future",
     name: "AutoPlanter AI",
-    description: "AI system that automatically plants Synth Blooms in empty Future plots.",
+    description: "AI system that automatically plants the most valuable Future crop.",
     cost: { "Coins": 1000, "ChronoEnergy": 50, "EnergyCredits": 200 },
-    effect: "Automatically plants a Synth Bloom in an empty Future plot every 20 seconds if resources allow.",
+    effect: "Attempts to plant the best Future crop in an empty plot every 25 seconds.",
     isPassive: true,
     era: "Future",
   },
@@ -331,31 +329,31 @@ export const UPGRADES_CONFIG: Record<string, UpgradeConfig> = {
   cropGrowth_Present: {
     id: 'cropGrowth_Present',
     name: 'Faster Crop Growth (Present)',
-    description: 'Present Day crops grow faster.',
+    description: 'Present Day crops grow faster by 10% per level.',
     maxLevel: 5,
     cost: (level) => ({ "Coins": 50 * Math.pow(2, level), "Energy": 10 * Math.pow(1.5, level) }),
-    effect: (level) => 1 - (level * 0.1), // 10% reduction per level
-    appliesTo: 'cropGrowth_Present',
+    effect: (level) => 1 - (level * 0.1),
+    appliesTo: 'Present Era Crop Growth Time',
     era: "Present",
   },
   sunflowerBoost_Present: {
     id: 'sunflowerBoost_Present',
     name: 'Sunflower Sunlight Boost',
-    description: 'Sunflowers produce more Sunlight.',
+    description: 'Sunflowers produce 20% more Sunlight per level.',
     maxLevel: 5,
     cost: (level) => ({ "Coins": 75 * Math.pow(2, level), "Energy": 5 * Math.pow(1.5, level) }),
-    effect: (level) => 1 + (level * 0.2), // 20% bonus per level
-    appliesTo: 'sunflowerYield',
+    effect: (level) => 1 + (level * 0.2),
+    appliesTo: 'Sunflower Sunlight Yield',
     era: "Present",
   },
   cheaperCrops_Present: {
     id: 'cheaperCrops_Present',
     name: 'Cheaper Crop Costs (Present)',
-    description: 'Reduces planting cost for Present Day crops.',
+    description: 'Reduces planting cost (non-Water) for Present Day crops by 15% per level.',
     maxLevel: 3,
     cost: (level) => ({ "Coins": 100 * Math.pow(2.5, level), "Energy": 20 * Math.pow(1.8, level) }),
-    effect: (level) => 1 - (level * 0.15), // 15% cost reduction per level
-    appliesTo: 'cropCost_Present',
+    effect: (level) => 1 - (level * 0.15),
+    appliesTo: 'Present Era Crop Non-Water Cost',
     era: "Present",
   },
   waterCost_Present: {
@@ -365,17 +363,17 @@ export const UPGRADES_CONFIG: Record<string, UpgradeConfig> = {
     maxLevel: 3,
     cost: (level) => ({ "Coins": 120 * Math.pow(2, level), "Energy": 15 * Math.pow(1.5, level) }),
     effect: (level) => 1 - (level * 0.20),
-    appliesTo: 'waterCost_Present',
+    appliesTo: 'Present Era Crop Water Cost',
     era: "Present",
   },
   passiveSunlight_Present: {
     id: 'passiveSunlight_Present',
     name: 'Solar Panels (Present)',
-    description: 'Increases passive Sunlight generation by 1 per level in Present era.',
+    description: 'Increases passive Sunlight generation by +1 per second per level in Present era.',
     maxLevel: 5,
     cost: (level) => ({ "Coins": 200 * Math.pow(2, level), "Energy": 50 * Math.pow(1.8, level) }),
     effect: (level) => level * 1,
-    appliesTo: 'passiveSunlight_Present',
+    appliesTo: 'Present Era Passive Sunlight',
     era: "Present",
   },
   // Prehistoric Upgrades
@@ -386,7 +384,7 @@ export const UPGRADES_CONFIG: Record<string, UpgradeConfig> = {
     maxLevel: 4,
     cost: (level) => ({ "Coins": 100 * Math.pow(2.2, level), "DinoBone": 5 * Math.pow(1.8, level) }),
     effect: (level) => 1 - (level * 0.15),
-    appliesTo: 'cropGrowth_Prehistoric',
+    appliesTo: 'Prehistoric Era Crop Growth Time',
     era: "Prehistoric",
   },
   yield_Prehistoric: {
@@ -396,7 +394,7 @@ export const UPGRADES_CONFIG: Record<string, UpgradeConfig> = {
     maxLevel: 5,
     cost: (level) => ({ "Coins": 150 * Math.pow(2.1, level), "MysticSpores": 10 * Math.pow(1.7, level) }),
     effect: (level) => 1 + (level * 0.10),
-    appliesTo: 'yield_Prehistoric',
+    appliesTo: 'Prehistoric Era Crop Mystic Spore & ChronoEnergy Yield',
     era: "Prehistoric",
   },
   // Future Upgrades
@@ -407,7 +405,7 @@ export const UPGRADES_CONFIG: Record<string, UpgradeConfig> = {
     maxLevel: 5,
     cost: (level) => ({ "EnergyCredits": 500 * Math.pow(2, level), "ChronoEnergy": 20 * Math.pow(1.8, level) }),
     effect: (level) => 1 - (level * 0.12),
-    appliesTo: 'cropGrowth_Future',
+    appliesTo: 'Future Era Crop Growth Time',
     era: "Future",
   },
   yield_Future: {
@@ -417,7 +415,7 @@ export const UPGRADES_CONFIG: Record<string, UpgradeConfig> = {
     maxLevel: 4,
     cost: (level) => ({ "EnergyCredits": 750 * Math.pow(2.2, level), "NaniteSolution": 5 * Math.pow(1.9, level) }),
     effect: (level) => 1 + (level * 0.15),
-    appliesTo: 'yield_Future',
+    appliesTo: 'Future Era Crop Energy Credit & Exotic Gene Yield',
     era: "Future",
   },
 };
@@ -429,7 +427,7 @@ export const PERMANENT_UPGRADES_CONFIG: Record<string, PermanentUpgradeConfig> =
     description: 'All crops across all eras grow slightly faster permanently.',
     maxLevel: 5,
     cost: (level) => ({ rareSeeds: (level + 1) * 2, chronoEnergy: 500 * Math.pow(2.5, level) }),
-    effect: (level) => 1 - (level * 0.05), // 5% reduction per level
+    effect: (level) => 1 - (level * 0.05),
     effectDescription: (level) => `All crops grow ${level * 5}% faster.`
   },
   permStartWithAutoHarvestPresent: {
@@ -438,17 +436,26 @@ export const PERMANENT_UPGRADES_CONFIG: Record<string, PermanentUpgradeConfig> =
     description: 'Begin each new timeline with the Present Day AutoHarvester already researched and built.',
     maxLevel: 1,
     cost: (level) => ({ rareSeeds: 5, chronoEnergy: 1000 }),
-    effect: (level) => level >= 1, // boolean flag
+    effect: (level) => level >= 1,
     effectDescription: (level) => level >= 1 ? "Present AutoHarvester unlocked from start." : "Unlocks Present AutoHarvester from start."
   },
   permRareSeedChance: {
     id: 'permRareSeedChance',
     name: 'Echoes of Rarity',
     description: 'Slightly increases the chance of finding Rare Seeds during harvest.',
-    maxLevel: 4, // Max +1%
+    maxLevel: 4,
     cost: (level) => ({ rareSeeds: (level + 1) * 3, chronoEnergy: 750 * Math.pow(2.8, level) }),
-    effect: (level) => level * 0.0025, // +0.25% per level (added to base 1%)
+    effect: (level) => level * 0.0025,
     effectDescription: (level) => `+${(level * 0.25).toFixed(2)}% Rare Seed drop chance.`
+  },
+  permEraSwitchBonus: {
+    id: 'permEraSwitchBonus',
+    name: 'Temporal Attunement',
+    description: 'Gain a small random resource bonus upon switching to a new era.',
+    maxLevel: 3,
+    cost: (level) => ({ rareSeeds: (level + 1) * 2, chronoEnergy: 700 * Math.pow(2.2, level) }),
+    effect: (level) => level * 5, // bonus amount
+    effectDescription: (level) => `Receive ${level * 5} of a random common resource (Water, Sunlight, Coins, Energy, Nutrients) when switching eras.`
   },
 };
 
@@ -458,9 +465,9 @@ export const SYNERGY_CONFIG: Record<string, SynergyConfig> = {
     name: 'Temporal Cultivation',
     description: (currentEffect) => `Increases ChronoEnergy yield from Future crops by ${Number(currentEffect).toFixed(1)}%.`,
     statToTrack: 'cropsHarvestedPresent',
-    threshold: 100, // crops for 1%
-    effectPerLevel: 0.01, // 1%
-    maxLevels: 20, // Max 20%
+    threshold: 100,
+    effectPerLevel: 0.01,
+    maxLevels: 20,
     valueSuffix: '%',
     appliesTo: 'futureChronoEnergyYield',
   },
@@ -469,9 +476,9 @@ export const SYNERGY_CONFIG: Record<string, SynergyConfig> = {
     name: 'Primordial Echoes',
     description: (currentEffect) => `Reduces Water cost for Present Day crops by ${Number(currentEffect).toFixed(1)}%.`,
     statToTrack: 'cropsHarvestedPrehistoric',
-    threshold: 50, // crops for 1%
-    effectPerLevel: 0.01, // 1%
-    maxLevels: 25, // Max 25%
+    threshold: 50,
+    effectPerLevel: 0.01,
+    maxLevels: 25,
     valueSuffix: '%',
     appliesTo: 'presentWaterCost',
   },
@@ -479,80 +486,52 @@ export const SYNERGY_CONFIG: Record<string, SynergyConfig> = {
 
 export const WEATHER_CONFIG: Record<WeatherID, WeatherConfigItem> = {
   clear: {
-    id: "clear",
-    name: "Clear Skies",
-    description: "A calm day in the garden.",
-    icon: Sun, // Placeholder, could be a "clear sky" icon or Sun
-    durationSeconds: { min: 60, max: 120 },
-    effects: { sunlightFactor: 1, waterCostFactor: 1 },
+    id: "clear", name: "Clear Skies", description: "A calm day in the garden.", icon: Sun,
+    durationSeconds: { min: 60, max: 120 }, effects: { sunlightFactor: 1, waterCostFactor: 1 }, rarityWeight: 40,
   },
   sunny: {
-    id: "sunny",
-    name: "Sunny Day",
-    description: "Bright sunshine boosts passive Sunlight generation.",
-    icon: Sun,
-    durationSeconds: { min: 45, max: 90 },
-    effects: { sunlightFactor: 1.2, waterCostFactor: 1 }, // +20% passive sunlight
+    id: "sunny", name: "Sunny Day", description: "Bright sunshine boosts passive Sunlight generation.", icon: Sun,
+    durationSeconds: { min: 45, max: 90 }, effects: { sunlightFactor: 1.2, waterCostFactor: 1 }, rarityWeight: 20,
   },
   rainy: {
-    id: "rainy",
-    name: "Gentle Rain",
-    description: "Crops don't require Water for planting during the rain.",
-    icon: CloudRain,
-    durationSeconds: { min: 30, max: 60 },
-    effects: { sunlightFactor: 0.8, waterCostFactor: 0 }, // No water cost
+    id: "rainy", name: "Gentle Rain", description: "Crops don't require Water for planting during the rain.", icon: CloudRain,
+    durationSeconds: { min: 30, max: 60 }, effects: { sunlightFactor: 0.8, waterCostFactor: 0 }, rarityWeight: 20,
+  },
+  stormy: {
+    id: "stormy", name: "Temporal Storm", description: "Automations slowed, but crops grow 25% faster.", icon: CloudLightning,
+    durationSeconds: { min: 40, max: 80 }, effects: { globalGrowthSpeedFactor: 0.75, automationTickMultiplier: 1.5, sunlightFactor: 0.7 }, rarityWeight: 15,
+  },
+  solarEclipse: {
+    id: "solarEclipse", name: "Solar Eclipse", description: "Rare event! Future crops grow twice as fast.", icon: SunDim,
+    durationSeconds: { min: 20, max: 40 }, effects: { futureCropGrowthFactor: 0.5, sunlightFactor: 0.5 }, rarityWeight: 5,
   },
 };
 
 export const GOALS_CONFIG: Record<GoalID, GoalConfigItem> = {
   harvest10Carrots: {
-    id: "harvest10Carrots",
-    name: "First Harvest",
-    description: "Harvest 10 Carrots in the Present Day era.",
-    target: 10,
-    reward: { type: "chronoEnergy", amount: 20 },
-    icon: CarrotIcon,
-    statToTrack: "carrotsHarvested",
+    id: "harvest10Carrots", name: "First Harvest", description: "Harvest 10 Carrots in the Present Day era.",
+    target: 10, reward: { type: "chronoEnergy", amount: 20 }, icon: CarrotIcon, statToTrack: "carrotsHarvested",
   },
   unlockPrehistoric: {
-    id: "unlockPrehistoric",
-    name: "Time Traveler",
-    description: "Unlock the Prehistoric Era.",
-    target: 1,
-    reward: { type: "chronoEnergy", amount: 50 },
-    icon: Dna,
-    statToTrack: "prehistoricUnlocked",
+    id: "unlockPrehistoric", name: "Time Traveler", description: "Unlock the Prehistoric Era.",
+    target: 1, reward: { type: "chronoEnergy", amount: 50 }, icon: Dna, statToTrack: "prehistoricUnlocked",
   },
   prestigeOnce: {
-    id: "prestigeOnce",
-    name: "Loop Master",
-    description: "Prestige your garden for the first time.",
-    target: 1,
-    reward: { type: "rareSeed", amount: 1 }, // Gives 1 random rare seed
-    icon: Recycle,
-    statToTrack: "prestigeCount",
+    id: "prestigeOnce", name: "Loop Master", description: "Prestige your garden for the first time.",
+    target: 1, reward: { type: "rareSeed", amount: 1 }, icon: Recycle, statToTrack: "prestigeCount",
   },
   find3RareSeeds: {
-    id: "find3RareSeeds",
-    name: "Seed Collector",
-    description: "Discover 3 different Rare Seeds.",
-    target: 3,
-    reward: { type: "chronoEnergy", amount: 100 },
-    icon: Sparkles,
-    statToTrack: "rareSeedsFoundCount",
+    id: "find3RareSeeds", name: "Seed Collector", description: "Discover 3 different Rare Seeds.",
+    target: 3, reward: { type: "chronoEnergy", amount: 100 }, icon: Sparkles, statToTrack: "rareSeedsFoundCount",
   }
 };
 
-
-// For GameContext state, to avoid circular dependencies.
-// This is a simplified version for type checking in GameContext.
-// The actual state object will be in GameContext.
 export interface GameState {
   currentEra: EraID;
   unlockedEras: EraID[];
   chronoEnergy: number;
   resources: Record<string, number>;
-  plotSlots: Array<any | null>; // Simplified PlantedCrop
+  plotSlots: Array<any | null>;
   automationRules: AutomationRule[];
   activeAutomations: Record<string, boolean>;
   rareSeeds: string[];
@@ -573,33 +552,78 @@ export interface GameState {
   currentWeatherId: WeatherID | null;
   weatherEndTime: number;
   goalStatus: Record<GoalID, { progress: number; completed: boolean }>;
-  goalProgressTrackers: { // Specific counters for goals
+  goalProgressTrackers: {
     carrotsHarvested: number;
-    prehistoricUnlocked: number; // Binary 0 or 1
-    // prestigeCount is already in GameState
-    rareSeedsFoundCount: number; // Tracks unique rare seeds found for goal
+    prehistoricUnlocked: number;
+    rareSeedsFoundCount: number;
   };
 }
 
-// Helper to get a random weather ID, excluding current and 'clear' if possible
 export const getRandomWeatherId = (currentWeatherId: WeatherID | null): WeatherID => {
-  const weatherKeys = Object.keys(WEATHER_CONFIG) as WeatherID[];
-  let possibleWeather = weatherKeys.filter(id => id !== currentWeatherId);
-  if (possibleWeather.length === 0) possibleWeather = weatherKeys; // Fallback if only one weather defined
-
-  // Try to avoid 'clear' back-to-back if other options exist
-  if (currentWeatherId !== 'clear' && possibleWeather.includes('clear') && possibleWeather.length > 1) {
-      possibleWeather = possibleWeather.filter(id => id !== 'clear');
-  }
+  const totalWeight = Object.values(WEATHER_CONFIG).reduce((sum, weather) => sum + (weather.rarityWeight || 0), 0);
+  let randomNum = Math.random() * totalWeight;
   
-  return possibleWeather[Math.floor(Math.random() * possibleWeather.length)];
+  for (const weather of Object.values(WEATHER_CONFIG)) {
+    if (weather.id === currentWeatherId && Object.keys(WEATHER_CONFIG).length > 1) continue; // Try not to pick same weather twice if others exist
+    if (randomNum < (weather.rarityWeight || 0)) {
+      return weather.id;
+    }
+    randomNum -= (weather.rarityWeight || 0);
+  }
+  return "clear"; // Fallback
 };
 
-// Helper to get a random duration for weather
 export const getRandomWeatherDuration = (weatherId: WeatherID): number => {
     const config = WEATHER_CONFIG[weatherId];
-    if (!config) return 60 * 1000; // Default 60 seconds
+    if (!config) return 60 * 1000;
     const duration = Math.floor(Math.random() * (config.durationSeconds.max - config.durationSeconds.min + 1)) + config.durationSeconds.min;
-    return duration * 1000; // Convert to milliseconds
+    return duration * 1000;
 };
 
+export const COMMON_RESOURCES_FOR_BONUS: Array<keyof GameState['resources']> = ["Water", "Sunlight", "Coins", "Energy", "Nutrients"];
+
+// Helper function to calculate effective growth time, centralizing logic.
+export const calculateEffectiveGrowthTime = (
+    baseGrowthTime: number, 
+    cropId: string, 
+    cropEra: EraID, 
+    gameState: GameState
+  ): number => {
+  let growthTime = baseGrowthTime;
+
+  // Permanent global speed boost
+  const globalSpeedBoostLevel = gameState.permanentUpgradeLevels.permGlobalGrowSpeed || 0;
+  if (globalSpeedBoostLevel > 0) {
+    growthTime *= PERMANENT_UPGRADES_CONFIG.permGlobalGrowSpeed.effect(globalSpeedBoostLevel) as number;
+  }
+
+  // Rare seed boost
+  if (gameState.rareSeeds.includes(cropId)) {
+    growthTime *= 0.9;
+  }
+
+  // Era-specific growth upgrade
+  const fasterGrowthUpgradeId = `cropGrowth_${cropEra}`;
+  const fasterGrowthLevel = gameState.upgradeLevels[fasterGrowthUpgradeId] || 0;
+  if (UPGRADES_CONFIG[fasterGrowthUpgradeId] && fasterGrowthLevel > 0) {
+    growthTime *= UPGRADES_CONFIG[fasterGrowthUpgradeId].effect(fasterGrowthLevel);
+  }
+
+  // Future era specific automation boost
+  if (cropEra === "Future" && gameState.activeAutomations['growthoptimizer_future']) {
+    growthTime *= 0.75;
+  }
+
+  // Weather effects
+  if (gameState.currentWeatherId) {
+    const weather = WEATHER_CONFIG[gameState.currentWeatherId];
+    if (weather.effects.globalGrowthSpeedFactor) {
+        growthTime *= weather.effects.globalGrowthSpeedFactor;
+    }
+    if (cropEra === "Future" && weather.effects.futureCropGrowthFactor) {
+        growthTime *= weather.effects.futureCropGrowthFactor;
+    }
+  }
+  
+  return Math.max(1, growthTime); // Ensure growth time is at least 1 second
+};

@@ -8,49 +8,22 @@ import {
     ERAS, INITIAL_RESOURCES, GARDEN_PLOT_SIZE, ALL_CROPS_MAP, 
     AUTOMATION_RULES_CONFIG, UPGRADES_CONFIG, ALL_GAME_RESOURCES_MAP,
     PERMANENT_UPGRADES_CONFIG, SYNERGY_CONFIG, WEATHER_CONFIG, GOALS_CONFIG,
-    getRandomWeatherId, getRandomWeatherDuration
+    getRandomWeatherId, getRandomWeatherDuration, GameState as ConfigGameState, // Import GameState from config
+    IDLE_THRESHOLD_SECONDS, NANO_VINE_DECAY_WINDOW_SECONDS, ALL_CROPS_LIST,
+    calculateEffectiveGrowthTime, COMMON_RESOURCES_FOR_BONUS
 } from '@/config/gameConfig';
 
 export interface PlantedCrop {
   cropId: string;
-  era: EraID; // Era in which it was planted
+  era: EraID; 
   plantedAt: number;
   id: string;
+  maturityCheckedForDecay?: boolean; // For NanoVine
 }
 
-interface GameState {
-  currentEra: EraID;
-  unlockedEras: EraID[];
-  chronoEnergy: number;
-  resources: Record<string, number>;
-  plotSlots: Array<PlantedCrop | null>;
-  automationRules: AutomationRule[];
-  activeAutomations: Record<string, boolean>;
-  rareSeeds: string[]; // crop IDs
-  soilQuality: number;
-  isLoadingAiSuggestion: boolean;
-  aiSuggestion: string | null;
-  upgradeLevels: Record<string, number>; // For era-specific upgrades
-  lastTick: number;
-  lastUserInteractionTime: number; 
-  lastAutoPlantTime: number;
-  prestigeCount: number;
-  permanentUpgradeLevels: Record<string, number>; // For Chrono Nexus upgrades
-  synergyStats: {
-    cropsHarvestedPresent: number;
-    cropsHarvestedPrehistoric: number;
-    cropsHarvestedFuture: number;
-  };
-  currentWeatherId: WeatherID | null;
-  weatherEndTime: number;
-  goalStatus: Record<GoalID, { progress: number; completed: boolean }>;
-  goalProgressTrackers: {
-    carrotsHarvested: number;
-    prehistoricUnlocked: number;
-    rareSeedsFoundCount: number;
-    // prestigeCount is directly from state.prestigeCount
-  };
-}
+// Use the imported GameState type
+type GameState = ConfigGameState;
+
 
 const createDefaultState = (): GameState => {
   const initialGoalStatus: Record<GoalID, { progress: number; completed: boolean }> = 
@@ -73,8 +46,8 @@ const createDefaultState = (): GameState => {
     aiSuggestion: null,
     upgradeLevels: Object.keys(UPGRADES_CONFIG).reduce((acc, id) => { acc[id] = 0; return acc; }, {} as Record<string, number>),
     lastTick: 0, 
-    lastUserInteractionTime: 0, 
-    lastAutoPlantTime: 0,
+    lastUserInteractionTime: Date.now(), // Initialize with current time
+    lastAutoPlantTime: Date.now(), // Initialize with current time
     prestigeCount: 0,
     permanentUpgradeLevels: Object.keys(PERMANENT_UPGRADES_CONFIG).reduce((acc, id) => { acc[id] = 0; return acc; }, {} as Record<string, number>),
     synergyStats: {
@@ -82,8 +55,8 @@ const createDefaultState = (): GameState => {
       cropsHarvestedPrehistoric: 0,
       cropsHarvestedFuture: 0,
     },
-    currentWeatherId: null,
-    weatherEndTime: 0,
+    currentWeatherId: getRandomWeatherId(null),
+    weatherEndTime: Date.now() + getRandomWeatherDuration(getRandomWeatherId(null)),
     goalStatus: initialGoalStatus,
     goalProgressTrackers: {
       carrotsHarvested: 0,
@@ -123,7 +96,7 @@ type GameAction =
 const gameReducer = (state: GameState, action: GameAction): GameState => {
   let newState = { ...state };
 
-  if (action.type !== 'GAME_TICK' && action.type !== 'USER_INTERACTION' && action.type !== 'LOAD_STATE_FROM_STORAGE') {
+  if (action.type !== 'GAME_TICK' && action.type !== 'LOAD_STATE_FROM_STORAGE') {
     newState.lastUserInteractionTime = Date.now();
   }
   if (action.type === 'USER_INTERACTION') {
@@ -135,8 +108,20 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
     case 'LOAD_STATE_FROM_STORAGE':
       return action.payload;
     case 'SET_ERA':
-      if (state.unlockedEras.includes(action.payload)) {
+      if (state.unlockedEras.includes(action.payload) && state.currentEra !== action.payload) {
         newState.currentEra = action.payload;
+        // Temporal Attunement Bonus
+        const attunementLevel = newState.permanentUpgradeLevels.permEraSwitchBonus || 0;
+        if (attunementLevel > 0) {
+            const bonusAmount = PERMANENT_UPGRADES_CONFIG.permEraSwitchBonus.effect(attunementLevel) as number;
+            const randomResourceIndex = Math.floor(Math.random() * COMMON_RESOURCES_FOR_BONUS.length);
+            const resourceToBonus = COMMON_RESOURCES_FOR_BONUS[randomResourceIndex];
+            newState.resources = {
+                ...newState.resources,
+                [resourceToBonus]: (newState.resources[resourceToBonus] || 0) + bonusAmount,
+            };
+            // Toast for this bonus will be handled in EraNavigation component where dispatch happens
+        }
       }
       break;
     case 'UNLOCK_ERA':
@@ -167,6 +152,14 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       if (!cropConfig || slotIndex < 0 || slotIndex >= GARDEN_PLOT_SIZE || state.plotSlots[slotIndex] || cropConfig.era !== state.currentEra) {
         return state; 
       }
+       if (cropConfig.specialGrowthCondition && !cropConfig.specialGrowthCondition(state)) {
+        return state; // Cannot plant due to special conditions
+      }
+       if (cropConfig.isIdleDependent && (Date.now() - state.lastUserInteractionTime) / 1000 < IDLE_THRESHOLD_SECONDS) {
+         // Optionally, show a toast or prevent planting if player is too active for Glowshroom
+         // For now, just let it plant, growth will be stalled if active
+      }
+
 
       let waterCostMultiplier = 1;
       if (state.currentWeatherId === "rainy" && WEATHER_CONFIG[state.currentWeatherId]) {
@@ -225,34 +218,18 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
     }
     case 'HARVEST_CROP': {
       const { slotIndex } = action.payload;
-      const plantedCrop = state.plotSlots[slotIndex];
+      const plantedCrop = state.plotSlots[slotIndex] as PlantedCrop | null;
       if (!plantedCrop) return state;
 
       const cropConfig = ALL_CROPS_MAP[plantedCrop.cropId];
       if (!cropConfig) return state;
       
-      let growthTime = cropConfig.growthTime;
-      
-      const globalSpeedBoostLevel = state.permanentUpgradeLevels.permGlobalGrowSpeed || 0;
-      if (globalSpeedBoostLevel > 0) {
-          growthTime *= PERMANENT_UPGRADES_CONFIG.permGlobalGrowSpeed.effect(globalSpeedBoostLevel) as number;
-      }
-      
-      const isRare = state.rareSeeds.includes(cropConfig.id);
-      if (isRare) growthTime *= 0.9; 
-      
-      const cropGrowthUpgradeId = `cropGrowth_${plantedCrop.era}`;
-      if (UPGRADES_CONFIG[cropGrowthUpgradeId] && state.upgradeLevels[cropGrowthUpgradeId] > 0) {
-          growthTime *= UPGRADES_CONFIG[cropGrowthUpgradeId].effect(state.upgradeLevels[cropGrowthUpgradeId]);
-      }
-      
-      if (plantedCrop.era === "Future" && state.activeAutomations['growthoptimizer_future']) {
-        growthTime *= 0.75; 
-      }
+      const effectiveGrowthTime = calculateEffectiveGrowthTime(cropConfig.growthTime, plantedCrop.cropId, plantedCrop.era, state);
 
-      if ((Date.now() - plantedCrop.plantedAt) / 1000 < growthTime) return state; 
+      if ((Date.now() - plantedCrop.plantedAt) / 1000 < effectiveGrowthTime) return state; 
 
       let yieldMultiplier = 1;
+      const isRare = state.rareSeeds.includes(cropConfig.id);
       
       const yieldUpgradeId = `yield_${plantedCrop.era}`; 
       if (UPGRADES_CONFIG[yieldUpgradeId] && state.upgradeLevels[yieldUpgradeId] > 0) {
@@ -285,7 +262,6 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       else if (plantedCrop.era === "Future") newSynergyStats.cropsHarvestedFuture += 1;
       newState.synergyStats = newSynergyStats;
 
-      // Update Goal Progress
       if (cropConfig.id === "carrot") {
         newState = gameReducer(newState, { type: 'UPDATE_GOAL_PROGRESS', payload: { goalId: "harvest10Carrots", increment: 1 }});
       }
@@ -340,11 +316,13 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
         lastTick: Date.now(), 
         lastUserInteractionTime: Date.now(),
         lastAutoPlantTime: Date.now(),
-        goalProgressTrackers: { // Reset specific trackers, keep prestigeCount linked
+        currentWeatherId: getRandomWeatherId(null), // Get new weather on prestige
+        weatherEndTime: Date.now() + getRandomWeatherDuration(getRandomWeatherId(null)),
+        goalProgressTrackers: { 
             ...defaultForPrestige.goalProgressTrackers,
         },
         goalStatus: Object.keys(GOALS_CONFIG).reduce((acc, goalId) => {
-            acc[goalId as GoalID] = { progress: 0, completed: false }; // Reset progress, keep completed status for some if desired
+            acc[goalId as GoalID] = { progress: 0, completed: false }; 
             return acc;
         }, {} as Record<GoalID, { progress: number; completed: boolean }>),
       };
@@ -356,7 +334,6 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
               newState.activeAutomations[presentAutoHarvestConfig.id] = true;
           }
       }
-      // Update prestige goal immediately after prestige
       newState = gameReducer(newState, { type: 'UPDATE_GOAL_PROGRESS', payload: { goalId: "prestigeOnce", increment: 1 }});
       break;
     case 'UPDATE_SOIL_QUALITY':
@@ -439,19 +416,21 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       const newProgressTrackers = { ...state.goalProgressTrackers };
       const goalConfig = GOALS_CONFIG[goalId];
 
-      let currentProgress = 0;
+      let currentProgressValue = 0;
       if(goalConfig.statToTrack === "prestigeCount") {
-        currentProgress = state.prestigeCount; // Use direct state value for prestige count
+        currentProgressValue = state.prestigeCount; 
+      } else if (goalConfig.statToTrack === "rareSeedsFoundCount") {
+        currentProgressValue = state.rareSeeds.length;
       } else {
-        currentProgress = (newProgressTrackers[goalConfig.statToTrack] || 0) + increment;
-        newProgressTrackers[goalConfig.statToTrack] = currentProgress;
+        currentProgressValue = (newProgressTrackers[goalConfig.statToTrack] || 0) + increment;
+        newProgressTrackers[goalConfig.statToTrack] = currentProgressValue;
       }
       
-      newGoalStatus[goalId] = { ...newGoalStatus[goalId], progress: currentProgress };
-      newState.goalProgressTrackers = newProgressTrackers;
+      newGoalStatus[goalId] = { ...newGoalStatus[goalId], progress: currentProgressValue };
+      newState.goalProgressTrackers = newProgressTrackers; // Ensure trackers are updated
       newState.goalStatus = newGoalStatus;
 
-      if (currentProgress >= goalConfig.target) {
+      if (currentProgressValue >= goalConfig.target) {
         newState = gameReducer(newState, { type: 'COMPLETE_GOAL', payload: goalId });
       }
       break;
@@ -470,14 +449,17 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       } else if (goalConfig.reward.type === 'resource' && goalConfig.reward.resourceId) {
         newState.resources[goalConfig.reward.resourceId] = (newState.resources[goalConfig.reward.resourceId] || 0) + goalConfig.reward.amount;
       } else if (goalConfig.reward.type === 'rareSeed') {
-        // Give a random rare seed not already owned, or a random one if all owned (simplified)
         const availableCropsForRareSeed = ALL_CROPS_LIST.filter(c => !state.rareSeeds.includes(c.id));
         if (availableCropsForRareSeed.length > 0) {
             const randomCrop = availableCropsForRareSeed[Math.floor(Math.random() * availableCropsForRareSeed.length)];
             newState.rareSeeds = [...state.rareSeeds, randomCrop.id];
-        } else if (ALL_CROPS_LIST.length > 0) { // Fallback: give any random rare seed if all already found (unlikely)
+            newState = gameReducer(newState, { type: 'UPDATE_GOAL_PROGRESS', payload: { goalId: "find3RareSeeds", increment: 0 }}); // Re-check goal with new seed count
+        } else if (ALL_CROPS_LIST.length > 0) { 
             const randomCrop = ALL_CROPS_LIST[Math.floor(Math.random() * ALL_CROPS_LIST.length)];
-             if (!state.rareSeeds.includes(randomCrop.id)) newState.rareSeeds = [...state.rareSeeds, randomCrop.id];
+             if (!state.rareSeeds.includes(randomCrop.id)) {
+               newState.rareSeeds = [...state.rareSeeds, randomCrop.id];
+               newState = gameReducer(newState, { type: 'UPDATE_GOAL_PROGRESS', payload: { goalId: "find3RareSeeds", increment: 0 }});
+             }
         }
       }
       break;
@@ -497,8 +479,10 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       }
       
       let sunlightFactor = 1;
+      let automationTickMultiplier = 1;
       if(state.currentWeatherId && WEATHER_CONFIG[state.currentWeatherId]) {
           sunlightFactor = WEATHER_CONFIG[state.currentWeatherId].effects.sunlightFactor ?? 1;
+          automationTickMultiplier = WEATHER_CONFIG[state.currentWeatherId].effects.automationTickMultiplier ?? 1;
       }
 
       let passiveSunlightBonus = 0;
@@ -507,64 +491,79 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
           passiveSunlightBonus = UPGRADES_CONFIG[solarPanelUpgradeId].effect(state.upgradeLevels[solarPanelUpgradeId]);
       }
       if (Math.floor(now / 5000) > Math.floor(state.lastTick / 5000)) { 
-         newResources.Sunlight = (newResources.Sunlight || 0) + (1 + passiveSunlightBonus) * sunlightFactor;
+         newResources.Sunlight = (newResources.Sunlight || 0) + Math.round((1 + passiveSunlightBonus) * sunlightFactor);
       }
+
+      // NanoVine Decay Check
+      const newPlotSlotsForDecay = [...newState.plotSlots];
+      let plotChangedByDecay = false;
+      newPlotSlotsForDecay.forEach((slot, index) => {
+        if (slot && slot.cropId === 'nanovine') {
+            const cropConfig = ALL_CROPS_MAP.nanovine;
+            const effectiveGrowthTime = calculateEffectiveGrowthTime(cropConfig.growthTime, slot.cropId, slot.era, newState);
+            const maturityTime = slot.plantedAt + effectiveGrowthTime * 1000;
+            if (now > maturityTime && now > maturityTime + NANO_VINE_DECAY_WINDOW_SECONDS * 1000) {
+                newPlotSlotsForDecay[index] = null;
+                plotChangedByDecay = true;
+            }
+        }
+      });
+      if (plotChangedByDecay) newState.plotSlots = newPlotSlotsForDecay;
+
 
       // Automation Effects
       state.automationRules.forEach(rule => {
+        const baseInterval = 
+            rule.id === 'sprinkler_present' ? 10000 :
+            rule.id === 'autoharvester_present' ? 15000 :
+            rule.id === 'raptorharvester_prehistoric' ? 10000 :
+            rule.id === 'tarpitsprinkler_prehistoric' ? 20000 :
+            rule.id === 'autoplanter_ai_future' ? 25000 :
+            rule.id === 'energytransferdrone_future' ? 10000 : 10000; // Default for any new ones
+        
+        const currentAutomationTickInterval = baseInterval * automationTickMultiplier;
+
         if (state.activeAutomations[rule.id] && rule.era === state.currentEra) { 
           switch (rule.id) {
             case 'sprinkler_present':
-              if (Math.floor(now / 10000) > Math.floor(state.lastTick / 10000)) {
+              if (Math.floor(now / currentAutomationTickInterval) > Math.floor(state.lastTick / currentAutomationTickInterval)) {
                  newResources.Water = (newResources.Water || 0) + 1;
               }
               break;
             case 'autoharvester_present':
-              if (Math.floor(now / 15000) > Math.floor(state.lastTick / 15000)) {
-                const presentMatureSlots: number[] = [];
-                state.plotSlots.forEach((slot, index) => {
+              if (Math.floor(now / currentAutomationTickInterval) > Math.floor(state.lastTick / currentAutomationTickInterval)) {
+                const matureSlots: number[] = [];
+                newState.plotSlots.forEach((slot, index) => {
                     if (slot && slot.era === "Present") {
                         const cropCfg = ALL_CROPS_MAP[slot.cropId];
-                        let gTime = cropCfg.growthTime;
-                        if (state.permanentUpgradeLevels.permGlobalGrowSpeed > 0) gTime *= PERMANENT_UPGRADES_CONFIG.permGlobalGrowSpeed.effect(state.permanentUpgradeLevels.permGlobalGrowSpeed) as number;
-                        if (state.rareSeeds.includes(slot.cropId)) gTime *= 0.9;
-                        const growthUpgrade = `cropGrowth_Present`;
-                        if(UPGRADES_CONFIG[growthUpgrade] && state.upgradeLevels[growthUpgrade] > 0) {
-                            gTime *= UPGRADES_CONFIG[growthUpgrade].effect(state.upgradeLevels[growthUpgrade]);
-                        }
-                        if ((now - slot.plantedAt) / 1000 >= gTime) presentMatureSlots.push(index);
+                        const effGrowthTime = calculateEffectiveGrowthTime(cropCfg.growthTime, slot.cropId, slot.era, newState);
+                        if ((now - slot.plantedAt) / 1000 >= effGrowthTime) matureSlots.push(index);
                     }
                 });
-                if (presentMatureSlots.length > 0) {
-                    const randIdx = presentMatureSlots[Math.floor(Math.random() * presentMatureSlots.length)];
+                if (matureSlots.length > 0) {
+                    const randIdx = matureSlots[Math.floor(Math.random() * matureSlots.length)];
                     newState = gameReducer(newState, { type: 'HARVEST_CROP', payload: { slotIndex: randIdx }});
                     Object.assign(newResources, newState.resources); 
                 }
               }
               break;
             case 'raptorharvester_prehistoric':
-              if (Math.floor(now / 10000) > Math.floor(state.lastTick / 10000)) {
-                const prehistoricMatureSlots: number[] = [];
-                state.plotSlots.forEach((slot, index) => {
+              if (Math.floor(now / currentAutomationTickInterval) > Math.floor(state.lastTick / currentAutomationTickInterval)) {
+                const matureSlots: number[] = [];
+                newState.plotSlots.forEach((slot, index) => {
                     if (slot && slot.era === "Prehistoric") {
                         const cropCfg = ALL_CROPS_MAP[slot.cropId];
-                        let gTime = cropCfg.growthTime;
-                        if (state.permanentUpgradeLevels.permGlobalGrowSpeed > 0) gTime *= PERMANENT_UPGRADES_CONFIG.permGlobalGrowSpeed.effect(state.permanentUpgradeLevels.permGlobalGrowSpeed) as number;
-                        if (state.rareSeeds.includes(slot.cropId)) gTime *= 0.9;
-                        const growthUpgrade = `cropGrowth_Prehistoric`;
-                         if(UPGRADES_CONFIG[growthUpgrade] && state.upgradeLevels[growthUpgrade] > 0) {
-                            gTime *= UPGRADES_CONFIG[growthUpgrade].effect(state.upgradeLevels[growthUpgrade]);
-                        }
-                        if ((now - slot.plantedAt) / 1000 >= gTime) prehistoricMatureSlots.push(index);
+                        const effGrowthTime = calculateEffectiveGrowthTime(cropCfg.growthTime, slot.cropId, slot.era, newState);
+                        if ((now - slot.plantedAt) / 1000 >= effGrowthTime) matureSlots.push(index);
                     }
                 });
-                if (prehistoricMatureSlots.length > 0) {
-                    const randIdx = prehistoricMatureSlots[Math.floor(Math.random() * prehistoricMatureSlots.length)];
+                if (matureSlots.length > 0) {
+                    const randIdx = matureSlots[Math.floor(Math.random() * matureSlots.length)];
                     newState = gameReducer(newState, { type: 'HARVEST_CROP', payload: { slotIndex: randIdx }});
                     Object.assign(newResources, newState.resources);
                 }
                 if (Math.random() < 0.05) {
-                    const youngPlantsIndexes = state.plotSlots.map((s, i) => s && s.era === "Prehistoric" ? i : -1).filter(i => i !== -1);
+                    const youngPlantsIndexes = newState.plotSlots.map((s, i) => s && s.era === "Prehistoric" ? i : -1).filter(i => i !== -1);
                     if (youngPlantsIndexes.length > 0) {
                         const unluckyIndex = youngPlantsIndexes[Math.floor(Math.random() * youngPlantsIndexes.length)];
                         newState.plotSlots = [...newState.plotSlots]; 
@@ -574,30 +573,56 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
               }
               break;
             case 'tarpitsprinkler_prehistoric':
-              if (Math.floor(now / 20000) > Math.floor(state.lastTick / 20000)) { 
+              if (Math.floor(now / currentAutomationTickInterval) > Math.floor(state.lastTick / currentAutomationTickInterval)) { 
                  newResources.Water = (newResources.Water || 0) + 2;
                  newResources.MysticSpores = (newResources.MysticSpores || 0) + 1;
               }
               break;
             case 'autoplanter_ai_future':
-                if (Math.floor(now / 20000) > Math.floor(state.lastTick / 20000)) { 
-                    const emptyFutureSlots = newState.plotSlots.map((s, i) => (s === null || (s && s.era !== "Future")) ? i : -1).filter(i => i !== -1);
-                    if (emptyFutureSlots.length > 0 && newState.currentEra === "Future") { 
-                        const synthBloomId = "synthbloom";
-                        newState = gameReducer(newState, { type: 'PLANT_CROP', payload: { cropId: synthBloomId, era: "Future", slotIndex: emptyFutureSlots[0] }});
-                        Object.assign(newResources, newState.resources);
+                if (Math.floor(now / currentAutomationTickInterval) > Math.floor(state.lastTick / currentAutomationTickInterval)) { 
+                    const emptyFutureSlotsIndexes = newState.plotSlots.map((s, i) => (s === null) ? i : -1).filter(i => i !== -1);
+                    if (emptyFutureSlotsIndexes.length > 0 && newState.currentEra === "Future") {
+                        let bestCropToPlant: Crop | null = null;
+                        let maxValPerSec = -1;
+
+                        ALL_CROPS_LIST.filter(c => c.era === "Future").forEach(crop => {
+                            const modifiedCost = getModifiedCropCost(crop, newState); // Helper needed
+                            let canAfford = true;
+                            Object.entries(modifiedCost).forEach(([resId, amount]) => {
+                                if ((newState.resources[resId] || 0) < amount) canAfford = false;
+                            });
+
+                            if (canAfford) {
+                                const effGrowthTime = calculateEffectiveGrowthTime(crop.growthTime, crop.id, crop.era, newState);
+                                let totalYieldValue = 0; // Simplified: sum of coin/energy credit yields
+                                if(crop.yield.Coins) totalYieldValue += crop.yield.Coins;
+                                if(crop.yield.EnergyCredits) totalYieldValue += crop.yield.EnergyCredits; // Assuming 1 EC = 1 Coin for value calc
+
+                                const valPerSec = totalYieldValue / Math.max(1, effGrowthTime);
+                                if (valPerSec > maxValPerSec) {
+                                    maxValPerSec = valPerSec;
+                                    bestCropToPlant = crop;
+                                }
+                            }
+                        });
+                        
+                        if (bestCropToPlant) {
+                             const targetSlotIndex = emptyFutureSlotsIndexes[0]; // Plant in first available empty slot
+                             newState = gameReducer(newState, { type: 'PLANT_CROP', payload: { cropId: bestCropToPlant.id, era: "Future", slotIndex: targetSlotIndex }});
+                             Object.assign(newResources, newState.resources); // Update resources if planting happened
+                        }
                     }
                 }
                 break;
             case 'energytransferdrone_future': 
-                if (Math.floor(now / 10000) > Math.floor(state.lastTick / 10000)) {
+                if (Math.floor(now / currentAutomationTickInterval) > Math.floor(state.lastTick / currentAutomationTickInterval)) {
                     if (state.unlockedEras.includes("Present")) newResources.Energy = (newResources.Energy || 0) + 1;
                     if (state.unlockedEras.includes("Prehistoric")) newResources.Energy = (newResources.Energy || 0) + 1;
                 }
                 break;
           }
         } else if (rule.id === 'energytransferdrone_future' && state.activeAutomations[rule.id] && rule.era === "Future") { 
-             if (Math.floor(now / 10000) > Math.floor(state.lastTick / 10000)) {
+             if (Math.floor(now / currentAutomationTickInterval) > Math.floor(state.lastTick / currentAutomationTickInterval)) {
                 if (state.unlockedEras.includes("Present")) newResources.Energy = (newResources.Energy || 0) + 1;
                 if (state.unlockedEras.includes("Prehistoric")) newResources.Energy = (newResources.Energy || 0) + 1;
             }
@@ -611,6 +636,8 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
           const randomRareSeedId = state.rareSeeds[Math.floor(Math.random() * state.rareSeeds.length)];
           const cropToPlant = ALL_CROPS_MAP[randomRareSeedId];
           if (cropToPlant && cropToPlant.era === newState.currentEra) {
+            // Check if can afford this rare seed planting (it should be free as per original spec)
+            // For now, assume free planting of rare seeds by auto-plant
             const randomEmptySlot = emptyPlotIndexes[Math.floor(Math.random() * emptyPlotIndexes.length)];
             newState = gameReducer(newState, {type: 'PLANT_CROP', payload: {cropId: randomRareSeedId, era: newState.currentEra, slotIndex: randomEmptySlot }});
             newState.lastAutoPlantTime = now; 
@@ -630,6 +657,43 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
   }
   return newState;
 };
+
+// Helper function for AutoPlanter AI
+const getModifiedCropCost = (crop: Crop, state: GameState): Record<string, number> => {
+    let waterCostMultiplier = 1;
+    if (state.currentWeatherId === "rainy" && WEATHER_CONFIG[state.currentWeatherId]) {
+      waterCostMultiplier = WEATHER_CONFIG[state.currentWeatherId].effects.waterCostFactor ?? 1;
+    }
+    if (crop.era === "Present" && SYNERGY_CONFIG.primordialEchoes) {
+      const synergyLevel = Math.floor(state.synergyStats.cropsHarvestedPrehistoric / SYNERGY_CONFIG.primordialEchoes.threshold);
+      const maxSynergyLevel = SYNERGY_CONFIG.primordialEchoes.maxLevels || Infinity;
+      const effectiveSynergyLevel = Math.min(synergyLevel, maxSynergyLevel);
+      waterCostMultiplier *= (1 - (effectiveSynergyLevel * SYNERGY_CONFIG.primordialEchoes.effectPerLevel));
+      waterCostMultiplier = Math.max(0, waterCostMultiplier);
+    }
+
+    let costMultiplier = 1;
+    const cheaperCropsUpgradeId = `cheaperCrops_${crop.era}`;
+    if (UPGRADES_CONFIG[cheaperCropsUpgradeId] && state.upgradeLevels[cheaperCropsUpgradeId] > 0) {
+        costMultiplier = UPGRADES_CONFIG[cheaperCropsUpgradeId].effect(state.upgradeLevels[cheaperCropsUpgradeId]);
+    }
+    const dripIrrigationUpgradeId = `waterCost_${crop.era}`;
+    if (UPGRADES_CONFIG[dripIrrigationUpgradeId] && state.upgradeLevels[dripIrrigationUpgradeId] > 0){
+        waterCostMultiplier *= UPGRADES_CONFIG[dripIrrigationUpgradeId].effect(state.upgradeLevels[dripIrrigationUpgradeId]);
+    }
+    
+    const finalCosts: Record<string, number> = { ...crop.cost };
+    Object.keys(finalCosts).forEach(resId => {
+      let currentMultiplier = costMultiplier;
+      if (resId === "Water") {
+        currentMultiplier *= waterCostMultiplier;
+      }
+      finalCosts[resId] *= currentMultiplier; 
+      finalCosts[resId] = Math.max(0, Math.round(finalCosts[resId]));
+    });
+    return finalCosts;
+};
+
 
 interface GameContextProps {
   state: GameState;
@@ -660,7 +724,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             ...savedState,
             resources: { ...defaultState.resources, ...savedState.resources },
             plotSlots: Array.isArray(savedState.plotSlots) && savedState.plotSlots.length === GARDEN_PLOT_SIZE 
-              ? savedState.plotSlots 
+              ? savedState.plotSlots.map(p => p ? {...p, maturityCheckedForDecay: p.maturityCheckedForDecay ?? false} : null) // Ensure new fields
               : Array(GARDEN_PLOT_SIZE).fill(null),
             automationRules: Array.isArray(savedState.automationRules) ? savedState.automationRules : [],
             activeAutomations: savedState.activeAutomations || {},
@@ -668,13 +732,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             upgradeLevels: { ...defaultState.upgradeLevels, ...savedState.upgradeLevels },
             permanentUpgradeLevels: { ...defaultState.permanentUpgradeLevels, ...savedState.permanentUpgradeLevels },
             synergyStats: { ...defaultState.synergyStats, ...savedState.synergyStats },
-            currentWeatherId: savedState.currentWeatherId || null,
-            weatherEndTime: savedState.weatherEndTime || 0,
-            goalStatus: { ...initialGoalStatus, ...savedState.goalStatus }, // Merge carefully
+            currentWeatherId: savedState.currentWeatherId || getRandomWeatherId(null),
+            weatherEndTime: savedState.weatherEndTime || (Date.now() + getRandomWeatherDuration(savedState.currentWeatherId || getRandomWeatherId(null))),
+            goalStatus: { ...initialGoalStatus, ...savedState.goalStatus },
             goalProgressTrackers: { ...defaultState.goalProgressTrackers, ...savedState.goalProgressTrackers},
             lastTick: Date.now(), 
-            lastUserInteractionTime: Date.now(),
-            lastAutoPlantTime: Date.now(),
+            lastUserInteractionTime: savedState.lastUserInteractionTime || Date.now(),
+            lastAutoPlantTime: savedState.lastAutoPlantTime || Date.now(),
             prestigeCount: savedState.prestigeCount || 0,
           };
 
@@ -691,7 +755,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
                   mergedState.activeAutomations[presentAutoHarvestConfig.id] = true;
               }
           }
-          // Ensure goal trackers are updated based on loaded state if necessary
+          
           if (mergedState.goalStatus.unlockPrehistoric && mergedState.unlockedEras.includes("Prehistoric")) {
              mergedState.goalProgressTrackers.prehistoricUnlocked = 1;
              if(mergedState.goalStatus.unlockPrehistoric.progress < 1) mergedState.goalStatus.unlockPrehistoric.progress = 1;
@@ -700,18 +764,25 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
            if(mergedState.goalStatus.find3RareSeeds && mergedState.goalStatus.find3RareSeeds.progress < mergedState.rareSeeds.length) {
              mergedState.goalStatus.find3RareSeeds.progress = mergedState.rareSeeds.length;
            }
+           // Ensure prestige goal is correctly set from loaded prestige count
+            if (mergedState.goalStatus.prestigeOnce && mergedState.prestigeCount > mergedState.goalStatus.prestigeOnce.progress) {
+                mergedState.goalStatus.prestigeOnce.progress = mergedState.prestigeCount;
+                if (mergedState.prestigeCount >= GOALS_CONFIG.prestigeOnce.target && !mergedState.goalStatus.prestigeOnce.completed) {
+                    // This will be handled by a re-check in useEffect or similar if needed, or a direct dispatch.
+                    // For now, let GAME_TICK or next prestige action re-evaluate.
+                }
+            }
 
 
           dispatch({ type: 'LOAD_STATE_FROM_STORAGE', payload: mergedState });
         } catch (e) {
           console.error("Error loading saved game state:", e);
-          dispatch({ type: 'LOAD_STATE_FROM_STORAGE', payload: { ...createDefaultState(), lastTick: Date.now(), lastUserInteractionTime: Date.now(), lastAutoPlantTime: Date.now() } });
+          dispatch({ type: 'LOAD_STATE_FROM_STORAGE', payload: createDefaultState() });
         }
       } else {
-         dispatch({ type: 'LOAD_STATE_FROM_STORAGE', payload: { ...createDefaultState(), lastTick: Date.now(), lastUserInteractionTime: Date.now(), lastAutoPlantTime: Date.now(), currentWeatherId: getRandomWeatherId(null), weatherEndTime: Date.now() + getRandomWeatherDuration(getRandomWeatherId(null))} });
+         dispatch({ type: 'LOAD_STATE_FROM_STORAGE', payload: createDefaultState() });
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
 
   useEffect(() => {
@@ -730,16 +801,17 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     return () => clearInterval(tickInterval);
   }, [state.lastTick]); 
 
+  // Consolidate USER_INTERACTION dispatching to GameProvider level
   useEffect(() => {
     const userActivityListener = () => dispatch({ type: 'USER_INTERACTION' });
-    window.addEventListener('mousemove', userActivityListener);
     window.addEventListener('click', userActivityListener);
-    window.addEventListener('keypress', userActivityListener);
+    window.addEventListener('keydown', userActivityListener); // Listen for key presses too
+    window.addEventListener('mousemove', userActivityListener); // For more sensitive idle detection
 
     return () => {
-      window.removeEventListener('mousemove', userActivityListener);
       window.removeEventListener('click', userActivityListener);
-      window.removeEventListener('keypress', userActivityListener);
+      window.removeEventListener('keydown', userActivityListener);
+      window.removeEventListener('mousemove', userActivityListener);
     };
   }, []);
 

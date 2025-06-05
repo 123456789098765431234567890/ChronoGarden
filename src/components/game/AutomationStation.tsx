@@ -12,6 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Settings2, PlusCircle, Trash2, Bot, PowerOff, Power } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 
 export default function AutomationStation() {
@@ -82,6 +83,7 @@ export default function AutomationStation() {
   const builtAutomationsInCurrentEra = state.automationRules.filter(rule => rule.era === state.currentEra);
 
   return (
+    <TooltipProvider>
     <Card className="shadow-lg">
       <CardHeader>
         <CardTitle className="font-headline text-2xl flex items-center">
@@ -149,10 +151,15 @@ export default function AutomationStation() {
                 {builtAutomationsInCurrentEra.map((rule) => (
                   <li key={rule.id} className="flex items-center justify-between p-3 border rounded-lg bg-card hover:bg-muted/50 transition-colors">
                     <div className="flex-grow">
-                      <p className="font-semibold flex items-center">
-                        {state.activeAutomations[rule.id] ? <Power className="w-4 h-4 mr-2 text-green-500"/> : <PowerOff className="w-4 h-4 mr-2 text-red-500"/>}
-                        {rule.name}
-                      </p>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <p className="font-semibold flex items-center cursor-default">
+                                    {state.activeAutomations[rule.id] ? <Power className="w-4 h-4 mr-2 text-green-500"/> : <PowerOff className="w-4 h-4 mr-2 text-red-500"/>}
+                                    {rule.name}
+                                </p>
+                            </TooltipTrigger>
+                            <TooltipContent><p>{rule.description}</p></TooltipContent>
+                        </Tooltip>
                       <p className="text-xs text-muted-foreground">{rule.effect}</p>
                     </div>
                     <div className="flex items-center space-x-2">
@@ -161,9 +168,14 @@ export default function AutomationStation() {
                         onCheckedChange={(isChecked) => handleToggleAutomation(rule.id, isChecked)}
                         aria-label={`Toggle ${rule.name}`}
                       />
-                      <Button variant="ghost" size="icon" onClick={() => handleRemoveAutomation(rule.id)} title={`Dismantle ${rule.name}`}>
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon" onClick={() => handleRemoveAutomation(rule.id)} title={`Dismantle ${rule.name}`}>
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent><p>Dismantle {rule.name}</p></TooltipContent>
+                      </Tooltip>
                     </div>
                   </li>
                 ))}
@@ -184,5 +196,7 @@ export default function AutomationStation() {
         Note: Active automations might affect soil quality or have other subtle effects. Ensure you have enough resources for their upkeep if applicable.
       </CardFooter>
     </Card>
+    </TooltipProvider>
   );
 }
+

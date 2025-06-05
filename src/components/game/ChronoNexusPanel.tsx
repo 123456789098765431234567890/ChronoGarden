@@ -10,6 +10,8 @@ import { Zap, Sparkles, Award, CheckCircle } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
 
 export default function ChronoNexusPanel() {
   const { state, dispatch } = useGame();
@@ -43,7 +45,7 @@ export default function ChronoNexusPanel() {
   const handlePurchasePermanentUpgrade = (upgradeId: string) => {
     dispatch({ type: 'USER_INTERACTION' });
     const upgrade = PERMANENT_UPGRADES_CONFIG[upgradeId];
-    const currentLevel = state.permanentUpgradeLevels[upgradeId] || 0;
+    const currentLevel = state.permanentUpgradeLevels[upgrade.id] || 0;
 
     if (currentLevel >= upgrade.maxLevel) {
       toast({ title: "Max Level", description: `${upgrade.name} is already at max level.`, variant: "default" });
@@ -57,12 +59,13 @@ export default function ChronoNexusPanel() {
     } else {
       let missing = [];
       if (state.rareSeeds.length < cost.rareSeeds) missing.push(`${cost.rareSeeds - state.rareSeeds.length} Rare Seeds`);
-      if (state.chronoEnergy < cost.chronoEnergy) missing.push(`${cost.chronoEnergy - state.chronoEnergy} Chrono-Energy`);
+      if (state.chronoEnergy < cost.chronoEnergy) missing.push(`${(cost.chronoEnergy - state.chronoEnergy).toFixed(0)} Chrono-Energy`);
       toast({ title: "Cannot Afford Upgrade", description: `You need: ${missing.join(' and ')}.`, variant: "destructive" });
     }
   };
 
   return (
+    <TooltipProvider>
     <Card className="shadow-lg">
       <CardHeader>
         <CardTitle className="font-headline text-2xl flex items-center">
@@ -70,7 +73,7 @@ export default function ChronoNexusPanel() {
           Chrono Nexus - Permanent Upgrades
         </CardTitle>
         <CardDescription>
-          Spend Rare Seeds and Chrono-Energy for powerful upgrades that persist across all Prestiges. You have {state.rareSeeds.length} Rare Seeds.
+          Spend Rare Seeds and Chrono-Energy for powerful upgrades that persist across all Prestiges. You have {state.rareSeeds.length} Rare Seeds and {Math.floor(state.chronoEnergy)} Chrono-Energy.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -85,8 +88,12 @@ export default function ChronoNexusPanel() {
             <Card key={upgrade.id} className="p-4 border bg-muted/20">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2">
                 <div>
-                  <h3 className="font-headline text-lg">{upgrade.name}</h3>
-                  <p className="text-xs text-muted-foreground">{upgrade.description}</p>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                           <h3 className="font-headline text-lg cursor-help underline decoration-dotted">{upgrade.name}</h3>
+                        </TooltipTrigger>
+                        <TooltipContent><p>{upgrade.description}</p></TooltipContent>
+                    </Tooltip>
                   <p className="text-xs text-primary mt-1">Current Effect: {upgrade.effectDescription(currentLevel)}</p>
                 </div>
                 <div className="text-sm mt-2 sm:mt-0">
@@ -103,16 +110,21 @@ export default function ChronoNexusPanel() {
                       <Sparkles className="w-3 h-3 mr-1 text-accent" /> {costForNextLevel.rareSeeds} Rare Seeds
                     </span>
                     <span className="flex items-center">
-                      <Zap className="w-3 h-3 mr-1 text-yellow-500" /> {costForNextLevel.chronoEnergy} Chrono-Energy
+                      <Zap className="w-3 h-3 mr-1 text-yellow-500" /> {Math.ceil(costForNextLevel.chronoEnergy)} Chrono-Energy
                     </span>
                   </div>
-                  <Button
-                    onClick={() => handlePurchasePermanentUpgrade(upgrade.id)}
-                    disabled={isMaxLevel || !canAffordNextLevel}
-                    className="w-full sm:w-auto"
-                  >
-                    <Award className="w-4 h-4 mr-2" /> Upgrade to Level {currentLevel + 1}
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            onClick={() => handlePurchasePermanentUpgrade(upgrade.id)}
+                            disabled={isMaxLevel || !canAffordNextLevel}
+                            className="w-full sm:w-auto"
+                        >
+                            <Award className="w-4 h-4 mr-2" /> Upgrade to Level {currentLevel + 1}
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent><p>Next level effect: {upgrade.effectDescription(currentLevel + 1)}</p></TooltipContent>
+                  </Tooltip>
                 </>
               ) : (
                 <div className="flex items-center text-green-600 font-semibold">
@@ -124,8 +136,10 @@ export default function ChronoNexusPanel() {
         })}
       </CardContent>
       <CardFooter className="text-sm text-muted-foreground">
-        These upgrades are permanent and will significantly aid your progress through multiple timelines.
+        These upgrades are permanent and will significantly aid your progress through multiple timelines. Hover over names for descriptions.
       </CardFooter>
     </Card>
+    </TooltipProvider>
   );
 }
+

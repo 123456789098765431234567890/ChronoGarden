@@ -10,6 +10,7 @@ import { TrendingUp, CheckCircle } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export default function UpgradesPanel() {
   const { state, dispatch } = useGame();
@@ -19,7 +20,7 @@ export default function UpgradesPanel() {
   const handlePurchaseUpgrade = (upgradeId: string) => {
     dispatch({ type: 'USER_INTERACTION' });
     const upgrade = UPGRADES_CONFIG[upgradeId];
-    const currentLevel = state.upgradeLevels[upgradeId] || 0;
+    const currentLevel = state.upgradeLevels[upgrade.id] || 0;
     if (currentLevel >= upgrade.maxLevel) {
         toast({ title: "Max Level", description: `${upgrade.name} is already at max level.`, variant: "default" });
         return;
@@ -44,6 +45,7 @@ export default function UpgradesPanel() {
   const availableUpgradesInCurrentEra = Object.values(UPGRADES_CONFIG).filter(upg => upg.era === state.currentEra);
 
   return (
+    <TooltipProvider>
     <Card className="shadow-lg">
       <CardHeader>
         <CardTitle className="font-headline text-2xl flex items-center">
@@ -51,7 +53,7 @@ export default function UpgradesPanel() {
           {currentEraConfig.name} Era Upgrades
         </CardTitle>
         <CardDescription>
-          Invest resources to improve your garden's efficiency in the {currentEraConfig.name} era.
+          Invest resources to improve your garden's efficiency in the {currentEraConfig.name} era. These upgrades reset on Prestige.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -68,14 +70,26 @@ export default function UpgradesPanel() {
               }
             });
           }
+          const effectValue = upgrade.effect(currentLevel);
+          let effectDisplay = "";
+          if (typeof effectValue === 'number' && effectValue < 1 && effectValue > 0) { // Percentage reduction
+            effectDisplay = `${((1 - effectValue) * 100).toFixed(0)}% reduction`;
+          } else if (typeof effectValue === 'number' && effectValue > 1) { // Percentage increase or multiplier
+             effectDisplay = `${((effectValue - 1) * 100).toFixed(0)}% boost / x${effectValue.toFixed(2)}`;
+          } else if (typeof effectValue === 'number') { // Flat bonus
+             effectDisplay = `+${effectValue.toFixed(1)}`;
+          }
+
 
           return (
             <Card key={upgrade.id} className="p-4 border bg-muted/20">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2">
                 <div>
                     <h3 className="font-headline text-lg">{upgrade.name}</h3>
-                    <p className="text-xs text-muted-foreground">{upgrade.description}</p>
-                     <p className="text-xs text-muted-foreground mt-1"><i>Effect applies to: {upgrade.appliesTo || 'General'}</i></p>
+                     <Tooltip>
+                        <TooltipTrigger asChild><p className="text-xs text-muted-foreground cursor-help underline decoration-dotted">{upgrade.description}</p></TooltipTrigger>
+                        <TooltipContent><p>Currently: {effectDisplay}. Applies to: {upgrade.appliesTo || 'General'}</p></TooltipContent>
+                     </Tooltip>
                 </div>
                 <div className="text-sm mt-2 sm:mt-0">
                     Level: <span className="font-bold">{currentLevel}</span> / {upgrade.maxLevel}
@@ -96,13 +110,18 @@ export default function UpgradesPanel() {
                       );
                     })}
                   </div>
-                  <Button
-                    onClick={() => handlePurchaseUpgrade(upgrade.id)}
-                    disabled={isMaxLevel || !canAffordNextLevel}
-                    className="w-full sm:w-auto"
-                  >
-                    <TrendingUp className="w-4 h-4 mr-2" /> Upgrade to Level {currentLevel + 1}
-                  </Button>
+                   <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        onClick={() => handlePurchaseUpgrade(upgrade.id)}
+                        disabled={isMaxLevel || !canAffordNextLevel}
+                        className="w-full sm:w-auto"
+                      >
+                        <TrendingUp className="w-4 h-4 mr-2" /> Upgrade to Level {currentLevel + 1}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent><p>Next level effect: {upgrade.appliesTo || 'General'} will be improved. </p></TooltipContent>
+                   </Tooltip>
                 </>
               ) : (
                 <div className="flex items-center text-green-600 font-semibold">
@@ -122,8 +141,10 @@ export default function UpgradesPanel() {
         )}
       </CardContent>
       <CardFooter className="text-sm text-muted-foreground">
-        Upgrades are permanent for their respective eras and help you progress within each timeline. They reset upon Prestige.
+        Upgrades are specific to their eras and reset upon Prestige. Hover over descriptions for more details.
       </CardFooter>
     </Card>
+    </TooltipProvider>
   );
 }
+

@@ -15,9 +15,9 @@ import {
     ALL_CROPS_MAP, 
     ERAS, 
     ALL_GAME_RESOURCES_MAP,
-    ALL_CROPS_LIST, // Import full list for AI
-    AUTOMATION_RULES_CONFIG, // Import for AI
-    UPGRADES_CONFIG // Import for AI
+    ALL_CROPS_LIST,
+    AUTOMATION_RULES_CONFIG,
+    UPGRADES_CONFIG
 } from '@/config/gameConfig';
 
 export default function AICropAdvisor() {
@@ -28,6 +28,7 @@ export default function AICropAdvisor() {
   const [customAutomationConfig, setCustomAutomationConfig] = useState('');
 
   const handleSubmitForAISuggestion = async () => {
+    dispatch({ type: 'USER_INTERACTION' });
     dispatch({ type: 'SET_AI_LOADING', payload: true });
     dispatch({ type: 'SET_AI_SUGGESTION', payload: null });
 
@@ -105,7 +106,7 @@ Total automations built across all eras: ${state.automationRules.length}. List: 
             id="customCropHealth"
             placeholder="e.g., My Sunflowers seem to be yielding less than expected, and soil is very dry..."
             value={customCropHealth}
-            onChange={(e) => setCustomCropHealth(e.target.value)}
+            onChange={(e) => { setCustomCropHealth(e.target.value); dispatch({ type: 'USER_INTERACTION' }); }}
             className="min-h-[80px]"
           />
           <p className="text-xs text-muted-foreground mt-1">If empty, detailed game state will be automatically sent.</p>
@@ -116,7 +117,7 @@ Total automations built across all eras: ${state.automationRules.length}. List: 
             id="customAutomationConfig"
             placeholder="e.g., I'm relying heavily on my Raptor Harvesters but they keep destroying young plants..."
             value={customAutomationConfig}
-            onChange={(e) => setCustomAutomationConfig(e.target.value)}
+            onChange={(e) => { setCustomAutomationConfig(e.target.value); dispatch({ type: 'USER_INTERACTION' });}}
             className="min-h-[80px]"
           />
            <p className="text-xs text-muted-foreground mt-1">If empty, active automations list will be automatically sent.</p>
