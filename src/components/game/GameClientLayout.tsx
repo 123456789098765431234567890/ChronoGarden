@@ -29,7 +29,7 @@ import VisitorPanel from '@/components/game/VisitorPanel'; // Phase 5
 import { useGame } from '@/contexts/GameContext';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ShieldQuestion, Droplets, MessageSquare, Award, Link2, Target as TargetIcon, Users, BarChart3, UserCircle2Icon } from 'lucide-react'; // Phase 5 icons
-import { ERAS, GAME_VERSION } from '@/config/gameConfig';
+import { ERAS, GAME_VERSION, GOALS_CONFIG, GoalID, NPC_QUESTS_CONFIG, NPC_VISITORS_CONFIG } from '@/config/gameConfig'; // Added GOALS_CONFIG
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; 
 
