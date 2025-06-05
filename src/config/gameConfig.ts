@@ -115,7 +115,7 @@ export interface GoalConfigItem {
 }
 
 export type QuestType = 'harvestSpecificCrop' | 'growWhileWeather';
-export type QuestStatus = 'inactive' | 'active' | 'completed';
+export type QuestStatus = 'inactive' | 'active' | 'completed' | 'failed';
 
 export interface QuestConfig {
   id: string;
@@ -136,6 +136,7 @@ export interface QuestConfig {
     questAccepted: string;
     questInProgress: string;
     questCompleted: string;
+    questFailed?: string; // Dialogue for when a timed quest fails
   };
 }
 
@@ -160,11 +161,22 @@ export interface PrestigeTierConfig {
 
 
 export const GARDEN_PLOT_SIZE = 9;
-export const GAME_VERSION = "v0.6.0";
+export const GAME_VERSION = "v0.5.0"; // Updated in previous step, keeping it consistent
 export const IDLE_THRESHOLD_SECONDS = 10;
 export const NANO_VINE_DECAY_WINDOW_SECONDS = 20;
 export const VISITOR_SPAWN_CHECK_INTERVAL_SECONDS = 60; // Check every minute
-export const QUEST_PROGRESS_SAVE_INTERVAL_SECONDS = 30;
+export const QUEST_PROGRESS_SAVE_INTERVAL_SECONDS = 30; // Not actively used yet but good constant
+
+// Placeholder for TreePalm icon:
+const TreePalm = Award; // Using Award as a placeholder for TreePalm.
+
+export const PRESTIGE_TIERS_CONFIG: Record<PrestigeTierID, PrestigeTierConfig> = {
+  Novice: { id: "Novice", minPrestigeCount: 0, icon: Sprout, title: "Novice Time Gardener" },
+  Apprentice: { id: "Apprentice", minPrestigeCount: 1, icon: Leaf, title: "Apprentice Chronoculturist" },
+  Adept: { id: "Adept", minPrestigeCount: 5, icon: Flower2, title: "Adept Temporal Botanist" },
+  Master: { id: "Master", minPrestigeCount: 10, icon: TreePalm, title: "Master of Chrono-Harvests" },
+  Grandmaster: { id: "Grandmaster", minPrestigeCount: 20, icon: BrainCircuit, title: "Grandmaster of the Eternal Garden" }
+};
 
 
 export const INITIAL_RESOURCES: ResourceItem[] = [
@@ -235,20 +247,20 @@ export const ERAS: Record<EraID, EraConfig> = {
     name: "Primordial Jungle",
     description: "Travel to a time of colossal flora and ancient creatures. Harness raw, powerful natural resources.",
     icon: Dna,
-    unlockCost: 100,
+    unlockCost: 100, // Kept from Phase 3
     availableCrops: ["mossfruit", "dinoroot", "glowshroom"],
     eraSpecificResources: [
        { id: "DinoBone", name: "Dino Bone", icon: Bone, description: "Fossilized bone, a sturdy material." },
        { id: "MysticSpores", name: "Mystic Spores", icon: Sparkles, description: "Ancient spores with unusual properties." },
     ],
-    specialMechanic: "Utilize DinoBones and MysticSpores. Harvest crops to gain ChronoEnergy.",
+    specialMechanic: "Utilize DinoBones and MysticSpores. Harvest crops to gain ChronoEnergy. Glowshrooms require player idle time.",
   },
   "Medieval": {
     id: "Medieval",
     name: "Alchemist's Garden",
     description: "Enter an era of knights, castles, and budding alchemy. (Content for this era coming in a future phase).",
     icon: FlaskConical,
-    unlockCost: 500,
+    unlockCost: 500, // Kept from Phase 3
     availableCrops: ["mandrake"],
     eraSpecificResources: [],
     specialMechanic: "Alchemy-based upgrades for soil and plants. (Mechanics to be implemented).",
@@ -258,7 +270,7 @@ export const ERAS: Record<EraID, EraConfig> = {
     name: "Automated Farmlands",
     description: "The age of technology and efficiency. (Content for this era coming in a future phase).",
     icon: Settings,
-    unlockCost: 2000,
+    unlockCost: 2000, // Kept from Phase 3
     availableCrops: ["hydrocorn"],
     eraSpecificResources: [],
     specialMechanic: "Deploy drones, sprinklers, and automated harvesters. (Mechanics to be implemented).",
@@ -268,7 +280,7 @@ export const ERAS: Record<EraID, EraConfig> = {
     name: "Bio-Engineered Domes",
     description: "Step into a future where nature and technology are seamlessly integrated. Optimize crops with AI and control climate.",
     icon: BrainCircuit,
-    unlockCost: 5000,
+    unlockCost: 5000, // Kept from Phase 3
     availableCrops: ["synthbloom", "nanovine", "quantumbud"],
     eraSpecificResources: [
       { id: "EnergyCredits", name: "Energy Credits", icon: Zap, description: "Universal currency and power source in the Future." },
@@ -277,7 +289,7 @@ export const ERAS: Record<EraID, EraConfig> = {
       { id: "ControlledAtmosphere", name: "Atmo Regulator", icon: Wind, description: "Device to manage dome atmosphere, used by some plants." },
       { id: "AdvancedNutrients", name: "Advanced Nutrients", icon: Briefcase, description: "Precisely formulated plant food." },
     ],
-    specialMechanic: "AI crop engineers provide optimization. Climate domes allow precise environmental control. Gene splicing for hybrid crops.",
+    specialMechanic: "AI crop engineers provide optimization. Climate domes allow precise environmental control. Gene splicing for hybrid crops. Nano Vines decay quickly if not harvested.",
   },
 };
 
@@ -344,7 +356,7 @@ export const AUTOMATION_RULES_CONFIG: AutomationRule[] = [
   },
   {
     id: "autoplanter_ai_future",
-    name: "AutoPlanter AI",
+    name: "AutoPlanter AI (Future)",
     description: "AI system that automatically plants the most valuable Future crop.",
     cost: { "Coins": 1000, "ChronoEnergy": 50, "EnergyCredits": 200 },
     effect: "Attempts to plant the best Future crop in an empty plot every 25 seconds.",
@@ -492,7 +504,7 @@ export const PERMANENT_UPGRADES_CONFIG: Record<string, PermanentUpgradeConfig> =
     description: 'Slightly increases the chance of finding Rare Seeds during harvest.',
     maxLevel: 4,
     cost: (level) => ({ rareSeeds: (level + 1) * 3, chronoEnergy: 750 * Math.pow(2.8, level) }),
-    effect: (level) => level * 0.0025,
+    effect: (level) => level * 0.0025, // +0.25% per level
     effectDescription: (level) => `+${(level * 0.25).toFixed(2)}% Rare Seed drop chance.`
   },
   permEraSwitchBonus: {
@@ -501,8 +513,8 @@ export const PERMANENT_UPGRADES_CONFIG: Record<string, PermanentUpgradeConfig> =
     description: 'Gain a small random resource bonus upon switching to a new era.',
     maxLevel: 3,
     cost: (level) => ({ rareSeeds: (level + 1) * 2, chronoEnergy: 700 * Math.pow(2.2, level) }),
-    effect: (level) => level * 5, // bonus amount
-    effectDescription: (level) => `Receive ${level * 5} of a random common resource (Water, Sunlight, Coins, Energy, Nutrients) when switching eras.`
+    effect: (level) => level * 5, // Represents the amount of random resource bonus
+    effectDescription: (level) => `Receive ${level * 5} of a random common resource when switching eras.`
   },
 };
 
@@ -510,10 +522,10 @@ export const SYNERGY_CONFIG: Record<string, SynergyConfig> = {
   temporalCultivation: {
     id: 'temporalCultivation',
     name: 'Temporal Cultivation',
-    description: (currentEffect) => `Increases ChronoEnergy yield from Future crops by ${Number(currentEffect).toFixed(1)}%.`,
+    description: (currentEffect) => `Increases ChronoEnergy yield from Future crops by ${Number(currentEffect).toFixed(1)}%. Based on Present crops.`,
     statToTrack: 'cropsHarvestedPresent',
     threshold: 100,
-    effectPerLevel: 0.01,
+    effectPerLevel: 0.01, // 1%
     maxLevels: 20,
     valueSuffix: '%',
     appliesTo: 'futureChronoEnergyYield',
@@ -521,11 +533,11 @@ export const SYNERGY_CONFIG: Record<string, SynergyConfig> = {
   primordialEchoes: {
     id: 'primordialEchoes',
     name: 'Primordial Echoes',
-    description: (currentEffect) => `Reduces Water cost for Present Day crops by ${Number(currentEffect).toFixed(1)}%.`,
+    description: (currentEffect) => `Reduces Water cost for Present Day crops by ${Number(currentEffect).toFixed(1)}%. Based on Prehistoric crops.`,
     statToTrack: 'cropsHarvestedPrehistoric',
     threshold: 50,
-    effectPerLevel: 0.01,
-    maxLevels: 25,
+    effectPerLevel: 0.01, // 1%
+    maxLevels: 25, // Max 25% reduction
     valueSuffix: '%',
     appliesTo: 'presentWaterCost',
   },
@@ -537,19 +549,19 @@ export const WEATHER_CONFIG: Record<WeatherID, WeatherConfigItem> = {
     durationSeconds: { min: 60, max: 120 }, effects: { sunlightFactor: 1, waterCostFactor: 1 }, rarityWeight: 40,
   },
   sunny: {
-    id: "sunny", name: "Sunny Day", description: "Bright sunshine boosts passive Sunlight generation.", icon: Sun,
+    id: "sunny", name: "Sunny Day", description: "Bright sunshine boosts passive Sunlight generation by 20%.", icon: Sun,
     durationSeconds: { min: 45, max: 90 }, effects: { sunlightFactor: 1.2, waterCostFactor: 1 }, rarityWeight: 20,
   },
   rainy: {
-    id: "rainy", name: "Gentle Rain", description: "Crops don't require Water for planting during the rain.", icon: CloudRain,
+    id: "rainy", name: "Gentle Rain", description: "Crops don't require Water for planting during the rain. Sunlight reduced by 20%.", icon: CloudRain,
     durationSeconds: { min: 30, max: 60 }, effects: { sunlightFactor: 0.8, waterCostFactor: 0 }, rarityWeight: 20,
   },
   stormy: {
-    id: "stormy", name: "Temporal Storm", description: "Automations slowed, but crops grow 25% faster.", icon: CloudLightning,
+    id: "stormy", name: "Temporal Storm", description: "Automations slowed (ticks take 50% longer), but crops grow 25% faster. Sunlight reduced by 30%.", icon: CloudLightning,
     durationSeconds: { min: 40, max: 80 }, effects: { globalGrowthSpeedFactor: 0.75, automationTickMultiplier: 1.5, sunlightFactor: 0.7 }, rarityWeight: 15,
   },
   solarEclipse: {
-    id: "solarEclipse", name: "Solar Eclipse", description: "Rare event! Future crops grow twice as fast.", icon: SunDim,
+    id: "solarEclipse", name: "Solar Eclipse (Rare)", description: "Rare event! Future crops grow twice as fast. Sunlight severely reduced by 50%.", icon: SunDim,
     durationSeconds: { min: 20, max: 40 }, effects: { futureCropGrowthFactor: 0.5, sunlightFactor: 0.5 }, rarityWeight: 5,
   },
 };
@@ -573,42 +585,44 @@ export const GOALS_CONFIG: Record<GoalID, GoalConfigItem> = {
   }
 };
 
-// Phase 5: Garden Visitors (NPCs)
 export const NPC_QUESTS_CONFIG: Record<string, QuestConfig> = {
   present_harvestCarrots: {
     id: "present_harvestCarrots", title: "Carrot Craving", era: "Present",
-    description: "Gardener Greg really wants some carrots. Harvest 20 Carrots for him.",
-    type: 'harvestSpecificCrop', targetCropId: 'carrot', targetAmount: 20,
+    description: "Gardener Greg really wants some carrots. Harvest 20 Carrots for him within 3 minutes.",
+    type: 'harvestSpecificCrop', targetCropId: 'carrot', targetAmount: 20, durationMinutes: 3,
     reward: { type: 'coins', amount: 100 },
     dialogue: {
-      greeting: "Howdy, partner! Nice lookin' garden you got there. Say, could you help an old timer out?",
-      questAccepted: "Great! I'll be back when you've got those carrots.",
-      questInProgress: "Still working on those carrots? My stomach's rumblin'!",
-      questCompleted: "Much obliged! These are some fine carrots. Here's a little something for your trouble.",
+      greeting: "Howdy, partner! Nice lookin' garden. Say, I'm starvin'! Could you fetch me 20 carrots? I'm on a tight schedule!",
+      questAccepted: "Great! But be quick, I ain't got all day!",
+      questInProgress: "Tick-tock! Those carrots ain't gonna pick themselves!",
+      questCompleted: "Woo-ee! Just in time! These are mighty fine carrots. Here's a little something for your trouble.",
+      questFailed: "Aw shucks, too slow. Maybe next time, partner. I gotta dash!",
     }
   },
   prehistoric_findGlowshrooms: {
     id: "prehistoric_findGlowshrooms", title: "Shiny Rocks!", era: "Prehistoric",
-    description: "Cavechild Kai is fascinated by shiny things. Harvest 5 Glowshrooms.",
+    description: "Cavechild Kai is fascinated by shiny things. Harvest 5 Glowshrooms for Kai.",
     type: 'harvestSpecificCrop', targetCropId: 'glowshroom', targetAmount: 5,
     reward: { type: 'rareSeed', amount: 1 },
     dialogue: {
-      greeting: "Ugh! Kai want shiny rock! You find for Kai?",
-      questAccepted: "Kai wait! Bring shiny rock!",
-      questInProgress: "Shiny rock? Where shiny rock?",
-      questCompleted: "Ooh! So shiny! Kai happy! Here, you take this rock. Also shiny.",
+      greeting: "Ugh! Kai want shiny rock! You find for Kai? Kai give good rock too!",
+      questAccepted: "Kai wait! Bring shiny rock! Make Kai happy!",
+      questInProgress: "Shiny rock? Where shiny rock? Kai getting sleepy...",
+      questCompleted: "Ooh! So shiny! Kai happy! Here, you take this special rock. Also shiny. Good trade!",
+      questFailed: "Kai sad. No shiny rock. You come back later maybe.",
     }
   },
   future_needSynthBloomsStorm: {
     id: "future_needSynthBloomsStorm", title: "Stormy Synthesis", era: "Future",
-    description: "BotanyBot-9 needs data on Synth Blooms grown during a Temporal Storm. Grow and harvest 3 Synth Blooms while a storm is active.",
-    type: 'growWhileWeather', targetCropId: 'synthbloom', targetAmount: 3, requiredWeatherId: 'stormy',
+    description: "BotanyBot-9 needs data on Synth Blooms grown during a Temporal Storm. Grow and harvest 3 Synth Blooms while a storm is active. You have 5 minutes once the storm starts.",
+    type: 'growWhileWeather', targetCropId: 'synthbloom', targetAmount: 3, requiredWeatherId: 'stormy', durationMinutes: 5,
     reward: { type: 'chronoEnergy', amount: 150 },
     dialogue: {
-      greeting: "Greetings, Cultivator Unit. Anomaly detected: Temporal Storm. Optimal conditions for unique Synth Bloom data acquisition. Your assistance is requested.",
-      questAccepted: "Acknowledged. Monitoring for Synth Bloom harvest during designated meteorological event.",
-      questInProgress: "Awaiting Synth Bloom data. Ensure harvest occurs during Temporal Storm parameters.",
+      greeting: "Greetings, Cultivator Unit. Anomaly detected: Temporal Storm imminent. Optimal conditions for unique Synth Bloom data acquisition. Your assistance is requested. Task must be completed within 5 minutes of storm commencement.",
+      questAccepted: "Acknowledged. Monitoring for Synth Bloom harvest during designated meteorological event. Timer initiated upon storm detection.",
+      questInProgress: "Awaiting Synth Bloom data. Ensure harvest occurs during Temporal Storm parameters. Time is a factor.",
       questCompleted: "Data acquired. Chrono-Energy compensation processed. Your efficiency is noted.",
+      questFailed: "Objective parameters not met within designated timeframe. Data acquisition failed. Recalibrating.",
     }
   }
 };
@@ -619,25 +633,13 @@ export const NPC_VISITORS_CONFIG: Record<VisitorID, VisitorConfig> = {
     quests: [NPC_QUESTS_CONFIG.present_harvestCarrots], spawnChance: 0.3
   },
   cavechildKai: {
-    id: "cavechildKai", name: "Cavechild Kai", era: "Prehistoric", icon: UserCircle, // Replace with a more thematic icon if available
+    id: "cavechildKai", name: "Cavechild Kai", era: "Prehistoric", icon: UserCircle,
     quests: [NPC_QUESTS_CONFIG.prehistoric_findGlowshrooms], spawnChance: 0.25
   },
   botanyBot9: {
     id: "botanyBot9", name: "BotanyBot-9000", era: "Future", icon: Settings,
     quests: [NPC_QUESTS_CONFIG.future_needSynthBloomsStorm], spawnChance: 0.2
   }
-};
-
-// Placeholder for TreePalm icon:
-const TreePalm = Award; // Moved before PRESTIGE_TIERS_CONFIG
-
-// Phase 5: Prestige Tiers
-export const PRESTIGE_TIERS_CONFIG: Record<PrestigeTierID, PrestigeTierConfig> = {
-  Novice: { id: "Novice", minPrestigeCount: 0, icon: Sprout, title: "Novice Time Gardener" },
-  Apprentice: { id: "Apprentice", minPrestigeCount: 1, icon: Leaf, title: "Apprentice Chronoculturist" },
-  Adept: { id: "Adept", minPrestigeCount: 5, icon: Flower2, title: "Adept Temporal Botanist" },
-  Master: { id: "Master", minPrestigeCount: 10, icon: TreePalm, title: "Master of Chrono-Harvests" },
-  Grandmaster: { id: "Grandmaster", minPrestigeCount: 20, icon: BrainCircuit, title: "Grandmaster of the Eternal Garden" }
 };
 
 
@@ -671,8 +673,8 @@ export interface GameState {
     carrotsHarvested: number;
     prehistoricUnlocked: number;
     rareSeedsFoundCount: number;
-    // Ensure prestigeCount is part of goalProgressTrackers or handled directly
-    [key: string]: number; // Allow other string keys for dynamic tracking
+    prestigeCount: number; // Ensure this is included
+    [key: string]: number; 
   };
   // Phase 5 additions
   playerName: string;
@@ -682,7 +684,7 @@ export interface GameState {
     questId: string;
     visitorId: VisitorID;
     status: QuestStatus;
-    progress: number; // e.g., number of crops harvested
+    progress: number;
     startTime?: number; // For timed quests
   } | null;
   completedQuests: string[]; // Array of completed quest IDs
@@ -699,17 +701,20 @@ export interface PlantedCrop {
 }
 
 export const getRandomWeatherId = (currentWeatherId: WeatherID | null): WeatherID => {
-  const totalWeight = Object.values(WEATHER_CONFIG).reduce((sum, weather) => sum + (weather.rarityWeight || 0), 0);
+  const availableWeather = Object.values(WEATHER_CONFIG).filter(w => w.id !== currentWeatherId || Object.keys(WEATHER_CONFIG).length <= 1);
+  const totalWeight = availableWeather.reduce((sum, weather) => sum + (weather.rarityWeight || 0), 0);
+  
+  if (totalWeight === 0) return "clear"; // Fallback if all weights are 0 or no other weather available
+
   let randomNum = Math.random() * totalWeight;
   
-  for (const weather of Object.values(WEATHER_CONFIG)) {
-    if (weather.id === currentWeatherId && Object.keys(WEATHER_CONFIG).length > 1) continue; 
+  for (const weather of availableWeather) {
     if (randomNum < (weather.rarityWeight || 0)) {
       return weather.id;
     }
     randomNum -= (weather.rarityWeight || 0);
   }
-  return "clear"; 
+  return "clear"; // Fallback
 };
 
 export const getRandomWeatherDuration = (weatherId: WeatherID): number => {
@@ -729,32 +734,36 @@ export const calculateEffectiveGrowthTime = (
   ): number => {
   let growthTime = baseGrowthTime;
 
+  // Permanent Global Speed Boost
   const globalSpeedBoostLevel = gameState.permanentUpgradeLevels.permGlobalGrowSpeed || 0;
   if (globalSpeedBoostLevel > 0) {
     growthTime *= PERMANENT_UPGRADES_CONFIG.permGlobalGrowSpeed.effect(globalSpeedBoostLevel) as number;
   }
 
+  // Rare Seed Speed Boost
   if (gameState.rareSeeds.includes(cropId)) {
     growthTime *= 0.9; // Rare seeds grow 10% faster
   }
 
+  // Era-Specific Growth Upgrade
   const fasterGrowthUpgradeId = `cropGrowth_${cropEra}`;
   const fasterGrowthLevel = gameState.upgradeLevels[fasterGrowthUpgradeId] || 0;
   if (UPGRADES_CONFIG[fasterGrowthUpgradeId] && fasterGrowthLevel > 0) {
     growthTime *= UPGRADES_CONFIG[fasterGrowthUpgradeId].effect(fasterGrowthLevel);
   }
 
+  // Automation Speed Boost (Future Specific)
   if (cropEra === "Future" && gameState.activeAutomations['growthoptimizer_future']) {
-    growthTime *= 0.75; // Growth Optimizer Future effect
+    growthTime *= 0.75; // Growth Optimizer Future effect (25% faster)
   }
 
-  // Apply weather effects
+  // Weather Effects
   if (gameState.currentWeatherId) {
     const weather = WEATHER_CONFIG[gameState.currentWeatherId];
-    if (weather.effects.globalGrowthSpeedFactor) { // Stormy weather
+    if (weather.effects.globalGrowthSpeedFactor) { // Stormy weather affects all crops
         growthTime *= weather.effects.globalGrowthSpeedFactor;
     }
-    if (cropEra === "Future" && weather.effects.futureCropGrowthFactor) { // Solar Eclipse
+    if (cropEra === "Future" && weather.effects.futureCropGrowthFactor) { // Solar Eclipse affects Future crops
         growthTime *= weather.effects.futureCropGrowthFactor;
     }
   }
@@ -764,7 +773,6 @@ export const calculateEffectiveGrowthTime = (
 
 export const getCurrentPrestigeTier = (prestigeCount: number): PrestigeTierConfig => {
   let currentTier: PrestigeTierConfig = PRESTIGE_TIERS_CONFIG.Novice;
-  // Ensure PRESTIGE_TIERS_CONFIG is ordered by minPrestigeCount or iterate safely
   const sortedTiers = Object.values(PRESTIGE_TIERS_CONFIG).sort((a, b) => a.minPrestigeCount - b.minPrestigeCount);
   for (const tier of sortedTiers) {
     if (prestigeCount >= tier.minPrestigeCount) {
@@ -775,4 +783,3 @@ export const getCurrentPrestigeTier = (prestigeCount: number): PrestigeTierConfi
   }
   return currentTier;
 };
-

@@ -59,7 +59,6 @@ const createDefaultState = (): GameState => {
       rareSeedsFoundCount: 0,
       prestigeCount: 0,
     },
-    // Phase 5 additions
     playerName: "Time Gardener",
     gardenName: "My ChronoGarden",
     currentVisitorId: null,
@@ -95,13 +94,13 @@ type GameAction =
   | { type: 'SET_WEATHER'; payload: { weatherId: WeatherID | null; duration?: number } }
   | { type: 'UPDATE_GOAL_PROGRESS'; payload: { goalId: GoalID; increment?: number; absoluteValue?: number } }
   | { type: 'COMPLETE_GOAL'; payload: GoalID }
-  // Phase 5 Actions
   | { type: 'SET_PLAYER_NAME'; payload: string }
   | { type: 'SET_GARDEN_NAME'; payload: string }
   | { type: 'SPAWN_VISITOR'; payload: VisitorID }
   | { type: 'ACCEPT_QUEST'; payload: { visitorId: VisitorID, questId: string } }
   | { type: 'PROGRESS_QUEST'; payload: { cropId?: string, weatherId?: WeatherID } }
   | { type: 'COMPLETE_QUEST' }
+  | { type: 'FAIL_QUEST' } // New action for failing a quest
   | { type: 'DISMISS_VISITOR' }
   | { type: 'GAME_TICK' };
 
@@ -123,11 +122,11 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
     case 'SET_ERA':
       if (state.unlockedEras.includes(action.payload) && state.currentEra !== action.payload) {
         newState.currentEra = action.payload;
-        newState.currentVisitorId = null; // Dismiss visitor when changing era
+        newState.currentVisitorId = null; 
         newState.activeQuest = null;
 
         const attunementLevel = newState.permanentUpgradeLevels.permEraSwitchBonus || 0;
-        if (attunementLevel > 0) {
+        if (attunementLevel > 0 && PERMANENT_UPGRADES_CONFIG.permEraSwitchBonus) {
             const bonusAmount = PERMANENT_UPGRADES_CONFIG.permEraSwitchBonus.effect(attunementLevel) as number;
             const randomResourceIndex = Math.floor(Math.random() * COMMON_RESOURCES_FOR_BONUS.length);
             const resourceToBonus = COMMON_RESOURCES_FOR_BONUS[randomResourceIndex];
@@ -169,6 +168,9 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       }
        if (cropConfig.specialGrowthCondition && !cropConfig.specialGrowthCondition(state)) {
         return state;
+      }
+       if (cropConfig.isIdleDependent && (Date.now() - state.lastUserInteractionTime) / 1000 < IDLE_THRESHOLD_SECONDS) {
+        return state; 
       }
       
       let waterCostMultiplier = 1;
@@ -286,7 +288,7 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       
       let baseRareSeedChance = 0.01; 
       const permRareSeedChanceLevel = state.permanentUpgradeLevels.permRareSeedChance || 0;
-      if (permRareSeedChanceLevel > 0) {
+      if (permRareSeedChanceLevel > 0 && PERMANENT_UPGRADES_CONFIG.permRareSeedChance) {
           baseRareSeedChance += PERMANENT_UPGRADES_CONFIG.permRareSeedChance.effect(permRareSeedChanceLevel) as number;
       }
       if (Math.random() < baseRareSeedChance && !state.rareSeeds.includes(cropConfig.id)) {
@@ -345,17 +347,27 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
         goalProgressTrackers: { 
             ...defaultForPrestige.goalProgressTrackers,
             prestigeCount: currentPrestigeCount,
+             rareSeedsFoundCount: state.rareSeeds.length, // Carry over rare seed count for goal
         },
-        goalStatus: Object.keys(GOALS_CONFIG).reduce((acc, goalId) => {
-            const gId = goalId as GoalID;
-            if (gId === 'prestigeOnce' && currentPrestigeCount >= GOALS_CONFIG.prestigeOnce.target) {
-                 acc[gId] = { progress: currentPrestigeCount, completed: true };
-            } else {
-                 acc[gId] = { progress: 0, completed: false };
-            }
-            return acc;
-        }, {} as Record<GoalID, { progress: number; completed: boolean }>),
       };
+      // Recalculate goal statuses after prestige
+        const recalculatedGoalStatus: Record<GoalID, { progress: number; completed: boolean }> = 
+        Object.keys(GOALS_CONFIG).reduce((acc, goalId) => {
+            const gId = goalId as GoalID;
+            const goalConfig = GOALS_CONFIG[gId];
+            let currentProgress = 0;
+            if (goalConfig.statToTrack === 'prestigeCount') {
+                currentProgress = newState.prestigeCount;
+            } else if (goalConfig.statToTrack === 'rareSeedsFoundCount') {
+                currentProgress = newState.rareSeeds.length;
+            } else {
+                 // For other goals, progress resets unless specified otherwise
+                currentProgress = defaultForPrestige.goalStatus[gId]?.progress || 0;
+            }
+            acc[gId] = { progress: currentProgress, completed: currentProgress >= goalConfig.target };
+            return acc;
+        }, {} as Record<GoalID, { progress: number; completed: boolean }>);
+        newState.goalStatus = recalculatedGoalStatus;
       
       if (newState.permanentUpgradeLevels.permStartWithAutoHarvestPresent > 0) {
           const presentAutoHarvestConfig = AUTOMATION_RULES_CONFIG.find(r => r.id === 'autoharvester_present');
@@ -449,7 +461,9 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       if (absoluteValue !== undefined) {
         currentProgressValue = absoluteValue;
       } else if (goalConfig.statToTrack === "prestigeCount") {
-        currentProgressValue = state.prestigeCount + (increment || 0); // Use current prestigeCount
+        currentProgressValue = state.prestigeCount + (increment || 0); 
+      } else if (goalConfig.statToTrack === "rareSeedsFoundCount"){
+        currentProgressValue = state.rareSeeds.length; // Use the length of the array
       } else {
         currentProgressValue = (state.goalProgressTrackers[goalConfig.statToTrack] || 0) + (increment || 0);
       }
@@ -492,7 +506,6 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       }
       break;
     }
-    // Phase 5 Reducers
     case 'SET_PLAYER_NAME':
         newState.playerName = action.payload;
         break;
@@ -501,7 +514,7 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
         break;
     case 'SPAWN_VISITOR':
         newState.currentVisitorId = action.payload;
-        newState.activeQuest = null; // Clear any previous quest from this visitor slot
+        newState.activeQuest = null; 
         break;
     case 'ACCEPT_QUEST':
         const visitorConfig = NPC_VISITORS_CONFIG[action.payload.visitorId];
@@ -539,7 +552,6 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
         if (newState.activeQuest && newState.activeQuest.status === 'active') {
             const questConfig = NPC_QUESTS_CONFIG[newState.activeQuest.questId];
             if (questConfig && newState.activeQuest.progress >= (questConfig.targetAmount || 0)) {
-                // Grant reward
                 if (questConfig.reward.type === 'chronoEnergy') {
                     newState = gameReducer(newState, { type: 'ADD_CHRONO_ENERGY', payload: questConfig.reward.amount });
                 } else if (questConfig.reward.type === 'coins') {
@@ -554,13 +566,19 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
                 }
                 newState.activeQuest.status = 'completed';
                 newState.completedQuests = [...newState.completedQuests, questConfig.id];
-                // Visitor might leave or give final dialogue here, handled by UI for now
             }
+        }
+        break;
+    case 'FAIL_QUEST':
+        if (newState.activeQuest) {
+            newState.activeQuest.status = 'failed';
+            // Optionally, dismiss visitor immediately or after a short delay/dialogue
+            // For now, just marks as failed, UI can decide to dismiss.
         }
         break;
     case 'DISMISS_VISITOR':
         newState.currentVisitorId = null;
-        newState.activeQuest = null; // Also dismiss active quest if visitor leaves
+        newState.activeQuest = null; 
         break;
     case 'GAME_TICK': {
       const now = Date.now();
@@ -643,8 +661,10 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
                     const slot = slotData as PlantedCrop | null;
                     if (slot && slot.era === "Present") {
                         const cropCfg = ALL_CROPS_MAP[slot.cropId];
-                        const effGrowthTime = calculateEffectiveGrowthTime(cropCfg.growthTime, slot.cropId, slot.era, newState);
-                        if ((now - slot.plantedAt) / 1000 >= effGrowthTime) matureSlots.push(index);
+                        if (cropCfg) {
+                          const effGrowthTime = calculateEffectiveGrowthTime(cropCfg.growthTime, slot.cropId, slot.era, newState);
+                          if ((now - slot.plantedAt) / 1000 >= effGrowthTime) matureSlots.push(index);
+                        }
                     }
                 });
                 if (matureSlots.length > 0) {
@@ -661,8 +681,10 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
                     const slot = slotData as PlantedCrop | null;
                     if (slot && slot.era === "Prehistoric") {
                         const cropCfg = ALL_CROPS_MAP[slot.cropId];
-                        const effGrowthTime = calculateEffectiveGrowthTime(cropCfg.growthTime, slot.cropId, slot.era, newState);
-                        if ((now - slot.plantedAt) / 1000 >= effGrowthTime) matureSlots.push(index);
+                         if (cropCfg) {
+                            const effGrowthTime = calculateEffectiveGrowthTime(cropCfg.growthTime, slot.cropId, slot.era, newState);
+                            if ((now - slot.plantedAt) / 1000 >= effGrowthTime) matureSlots.push(index);
+                        }
                     }
                 });
                 if (matureSlots.length > 0) {
@@ -744,9 +766,11 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
           const randomRareSeedId = state.rareSeeds[Math.floor(Math.random() * state.rareSeeds.length)];
           const cropToPlant = ALL_CROPS_MAP[randomRareSeedId];
           if (cropToPlant && cropToPlant.era === newState.currentEra) {
-            const randomEmptySlot = emptyPlotIndexes[Math.floor(Math.random() * emptyPlotIndexes.length)];
-            newState = gameReducer(newState, {type: 'PLANT_CROP', payload: {cropId: randomRareSeedId, era: newState.currentEra, slotIndex: randomEmptySlot }});
-            newState.lastAutoPlantTime = now; 
+             if (!(cropToPlant.isIdleDependent && (Date.now() - newState.lastUserInteractionTime) / 1000 < IDLE_THRESHOLD_SECONDS)) {
+                const randomEmptySlot = emptyPlotIndexes[Math.floor(Math.random() * emptyPlotIndexes.length)];
+                newState = gameReducer(newState, {type: 'PLANT_CROP', payload: {cropId: randomRareSeedId, era: newState.currentEra, slotIndex: randomEmptySlot }});
+                newState.lastAutoPlantTime = now; 
+             }
           }
         }
       }
@@ -755,14 +779,12 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
         newState.soilQuality = Math.min(100, newState.soilQuality + 0.25);
       }
 
-      // NPC Visitor Spawning Logic
       if ((now - state.lastVisitorSpawnCheck) / 1000 >= VISITOR_SPAWN_CHECK_INTERVAL_SECONDS && !state.currentVisitorId) {
         newState.lastVisitorSpawnCheck = now;
         const potentialVisitorsForEra = Object.values(NPC_VISITORS_CONFIG).filter(v => v.era === state.currentEra);
         if (potentialVisitorsForEra.length > 0) {
             const randomVisitor = potentialVisitorsForEra[Math.floor(Math.random() * potentialVisitorsForEra.length)];
             if (Math.random() < randomVisitor.spawnChance) {
-                // Check if all quests from this visitor are completed
                 const allQuestsCompletedForVisitor = randomVisitor.quests.every(q => newState.completedQuests.includes(q.id));
                 if (!allQuestsCompletedForVisitor) {
                     newState = gameReducer(newState, { type: 'SPAWN_VISITOR', payload: randomVisitor.id });
@@ -770,16 +792,13 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
             }
         }
       }
-      // Check for timed quest failure
       if (newState.activeQuest && newState.activeQuest.status === 'active' && newState.activeQuest.startTime) {
         const questConfig = NPC_QUESTS_CONFIG[newState.activeQuest.questId];
-        if (questConfig.durationMinutes && (now - newState.activeQuest.startTime) / (1000 * 60) > questConfig.durationMinutes) {
-            // Quest failed due to time limit (for now, just dismiss)
-            newState = gameReducer(newState, { type: 'DISMISS_VISITOR' }); // Or a specific 'FAIL_QUEST' action
+        if (questConfig && questConfig.durationMinutes && (now - newState.activeQuest.startTime) / (1000 * 60) > questConfig.durationMinutes) {
+            newState = gameReducer(newState, { type: 'FAIL_QUEST' }); 
+            newState = gameReducer(newState, { type: 'DISMISS_VISITOR' });
         }
       }
-
-
       newState.lastTick = now;
       break;
     }
@@ -871,7 +890,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             prestigeCount: savedState.prestigeCount || 0,
             currentWeatherId: savedState.currentWeatherId && WEATHER_CONFIG[savedState.currentWeatherId] ? savedState.currentWeatherId : "clear",
             weatherEndTime: savedState.weatherEndTime && savedState.weatherEndTime > Date.now() ? savedState.weatherEndTime : 0,
-            // Phase 5 state fields
             playerName: savedState.playerName || initialState.playerName,
             gardenName: savedState.gardenName || initialState.gardenName,
             currentVisitorId: savedState.currentVisitorId || null,
@@ -902,8 +920,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
               }
           }
           
-          // Recalculate goal progress based on loaded state
-          mergedState.goalProgressTrackers.prestigeCount = mergedState.prestigeCount;
           Object.values(GOALS_CONFIG).forEach(goalConfig => {
             if (mergedState.goalStatus[goalConfig.id]) {
                 let progress = 0;
@@ -922,8 +938,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
                 }
             }
           });
-
-
           initialState = mergedState; 
         } catch (e) {
           console.error("Error loading saved game state:", e);
@@ -994,4 +1008,3 @@ export const useGame = (): GameContextProps => {
   }
   return context;
 };
-
