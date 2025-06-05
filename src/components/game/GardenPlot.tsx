@@ -6,7 +6,7 @@ import { useGame } from '@/contexts/GameContext';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from "@/components/ui/progress";
-import { ERAS, ALL_CROPS_MAP, UPGRADES_CONFIG, ALL_GAME_RESOURCES_MAP, Crop, GARDEN_PLOT_SIZE, EraID, PERMANENT_UPGRADES_CONFIG, SYNERGY_CONFIG } from '@/config/gameConfig';
+import { ERAS, ALL_CROPS_MAP, UPGRADES_CONFIG, ALL_GAME_RESOURCES_MAP, Crop, GARDEN_PLOT_SIZE, EraID, PERMANENT_UPGRADES_CONFIG, SYNERGY_CONFIG, WEATHER_CONFIG } from '@/config/gameConfig';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Sprout, Clock, PlusCircle, Trash2, CheckCircle } from 'lucide-react';
 import Image from 'next/image';
@@ -30,7 +30,7 @@ export default function GardenPlot() {
   const [selectedCropToPlant, setSelectedCropToPlant] = useState<string>(availableCropsInCurrentEra[0]?.id || "");
 
   useEffect(() => {
-    setClientCurrentTime(Date.now()); // Set on client after mount
+    setClientCurrentTime(Date.now()); 
     const timer = setInterval(() => setClientCurrentTime(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -76,14 +76,13 @@ export default function GardenPlot() {
 
 
   const handleClearSlot = (slotIndex: number) => {
-    if (clientCurrentTime === null) return; // Should not happen if button is visible
+    if (clientCurrentTime === null) return; 
     dispatch({ type: 'USER_INTERACTION' });
     const plantedCrop = state.plotSlots[slotIndex];
     if (plantedCrop) {
         const cropConfig = ALL_CROPS_MAP[plantedCrop.cropId];
         let growthTime = cropConfig.growthTime;
 
-        // Apply permanent global speed boost
         const globalSpeedBoostLevel = state.permanentUpgradeLevels.permGlobalGrowSpeed || 0;
         if (globalSpeedBoostLevel > 0) {
             growthTime *= PERMANENT_UPGRADES_CONFIG.permGlobalGrowSpeed.effect(globalSpeedBoostLevel) as number;
@@ -96,19 +95,17 @@ export default function GardenPlot() {
             growthTime *= UPGRADES_CONFIG[fasterGrowthUpgradeId].effect(fasterGrowthLevel);
         }
         if (plantedCrop.era === "Future" && state.activeAutomations['growthoptimizer_future']) {
-          growthTime *= 0.75; // 25% reduction from Future Growth Optimizer
+          growthTime *= 0.75; 
         }
 
         const isMature = (clientCurrentTime - plantedCrop.plantedAt) / 1000 >= growthTime;
         if (!isMature) {
-             dispatch({ type: 'HARVEST_CROP', payload: { slotIndex } }); // Will effectively clear it if not mature due to game logic
+             dispatch({ type: 'HARVEST_CROP', payload: { slotIndex } }); 
         }
     }
   };
 
-  const getGrowthProgress = (plantedAt: number, baseGrowthTime: number, cropId: string, cropEra: EraID, effectiveCurrentTime: number | null) => {
-    if (effectiveCurrentTime === null) return 0;
-
+  const calculateEffectiveGrowthTime = (baseGrowthTime: number, cropId: string, cropEra: EraID): number => {
     let growthTime = baseGrowthTime;
     
     const globalSpeedBoostLevel = state.permanentUpgradeLevels.permGlobalGrowSpeed || 0;
@@ -123,21 +120,49 @@ export default function GardenPlot() {
       growthTime *= UPGRADES_CONFIG[fasterGrowthUpgradeId].effect(fasterGrowthLevel);
     }
     if (cropEra === "Future" && state.activeAutomations['growthoptimizer_future']) {
-        growthTime *= 0.75; // 25% reduction
+        growthTime *= 0.75; 
     }
+    // Placeholder for weather effects on growth (e.g. Stormy)
+    // if (state.currentWeatherId === "stormy" && WEATHER_CONFIG.stormy) {
+    //    growthTime *= WEATHER_CONFIG.stormy.effects.growthSpeedFactor || 1;
+    // }
+    return growthTime;
+  };
+  
+  const getGrowthProgress = (plantedAt: number, baseGrowthTime: number, cropId: string, cropEra: EraID, effectiveCurrentTime: number | null) => {
+    if (effectiveCurrentTime === null) return 0;
 
+    const growthTime = calculateEffectiveGrowthTime(baseGrowthTime, cropId, cropEra);
     const cropConfig = ALL_CROPS_MAP[cropId];
     if (cropConfig.specialGrowthCondition && !cropConfig.specialGrowthCondition(state)) {
-      return 0; // Growth halted if special condition not met
+      return 0; 
     }
 
     const elapsedTime = (effectiveCurrentTime - plantedAt) / 1000;
     return Math.min(100, (elapsedTime / growthTime) * 100);
   };
+
+  const getRemainingGrowthTime = (plantedAt: number, baseGrowthTime: number, cropId: string, cropEra: EraID, effectiveCurrentTime: number | null): string => {
+    if (effectiveCurrentTime === null) return "Calculating...";
+    const growthTime = calculateEffectiveGrowthTime(baseGrowthTime, cropId, cropEra);
+    const elapsedTime = (effectiveCurrentTime - plantedAt) / 1000;
+    const remaining = Math.max(0, growthTime - elapsedTime);
+    if (remaining === 0) return "Ready!";
+    
+    const minutes = Math.floor(remaining / 60);
+    const seconds = Math.floor(remaining % 60);
+    if (minutes > 0) return `${minutes}m ${seconds}s`;
+    return `${seconds}s`;
+  };
   
   const getModifiedCropCost = (crop: Crop) => {
     let costMultiplier = 1;
     let waterCostMultiplier = 1;
+
+    // Apply weather effects
+    if (state.currentWeatherId && WEATHER_CONFIG[state.currentWeatherId]) {
+        waterCostMultiplier *= WEATHER_CONFIG[state.currentWeatherId].effects.waterCostFactor ?? 1;
+    }
 
     const cheaperCropsUpgradeId = `cheaperCrops_${crop.era}`;
     const cheaperCropsLevel = state.upgradeLevels[cheaperCropsUpgradeId] || 0;
@@ -147,10 +172,9 @@ export default function GardenPlot() {
 
     const waterCostUpgradeId = `waterCost_${crop.era}`;
      if (UPGRADES_CONFIG[waterCostUpgradeId] && state.upgradeLevels[waterCostUpgradeId] > 0){
-          waterCostMultiplier = UPGRADES_CONFIG[waterCostUpgradeId].effect(state.upgradeLevels[waterCostUpgradeId]);
+          waterCostMultiplier *= UPGRADES_CONFIG[waterCostUpgradeId].effect(state.upgradeLevels[waterCostUpgradeId]);
       }
     
-    // Synergy: Primordial Echoes (reduced water cost for Present)
     if (crop.era === "Present" && SYNERGY_CONFIG.primordialEchoes) {
       const synergyLevel = Math.floor(state.synergyStats.cropsHarvestedPrehistoric / SYNERGY_CONFIG.primordialEchoes.threshold);
       const maxSynergyLevel = SYNERGY_CONFIG.primordialEchoes.maxLevels || Infinity;
@@ -242,6 +266,8 @@ export default function GardenPlot() {
               const growthProgress = getGrowthProgress(slot.plantedAt, cropConfig.growthTime, slot.cropId, slot.era, clientCurrentTime);
               const isMature = growthProgress >= 100;
               const canGrow = !cropConfig.specialGrowthCondition || cropConfig.specialGrowthCondition(state);
+              const remainingTime = getRemainingGrowthTime(slot.plantedAt, cropConfig.growthTime, slot.cropId, slot.era, clientCurrentTime);
+
 
               return (
                 <Card key={slot.id || index} className="shadow-md relative overflow-hidden flex flex-col justify-between aspect-square bg-card">
@@ -262,7 +288,7 @@ export default function GardenPlot() {
                   <CardContent className="text-xs px-2 pb-1 flex-grow">
                     <Progress value={growthProgress} className="w-full h-1.5 mb-1" />
                     <p className="text-center text-muted-foreground">
-                        {clientCurrentTime === null ? "Loading..." : isMature ? "Ready!" : !canGrow ? "Stalled..." : `${Math.floor(growthProgress)}%`}
+                        {clientCurrentTime === null ? "Loading..." : isMature ? "Ready!" : !canGrow ? "Stalled..." : remainingTime}
                     </p>
                   </CardContent>
                   <CardFooter className="p-1 sm:p-2">

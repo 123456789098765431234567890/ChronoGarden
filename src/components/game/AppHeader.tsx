@@ -5,13 +5,16 @@ import React from 'react';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import ChronoLeafIcon from '@/components/icons/ChronoLeafIcon';
 import { useGame } from '@/contexts/GameContext';
-import { ERAS, ALL_GAME_RESOURCES_MAP } from '@/config/gameConfig';
-import { Zap, Droplets, Sun, Coins, Power } from 'lucide-react';
-import { ThemeToggle } from '@/components/ui/theme-toggle'; // Added ThemeToggle import
+import { ERAS, ALL_GAME_RESOURCES_MAP, WEATHER_CONFIG } from '@/config/gameConfig';
+import { Zap, Droplets, Sun, Coins, Power, Cloud, CloudRain, CloudSun } from 'lucide-react';
+import { ThemeToggle } from '@/components/ui/theme-toggle'; 
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
 
 export default function AppHeader() {
   const { state } = useGame();
   const currentEraConfig = ERAS[state.currentEra];
+  const currentWeather = state.currentWeatherId ? WEATHER_CONFIG[state.currentWeatherId] : null;
 
   const resourcesToShow = [
     { id: "Water", icon: Droplets },
@@ -20,6 +23,9 @@ export default function AppHeader() {
     { id: "Energy", icon: Power },
     { id: "ChronoEnergy", icon: Zap, color: "text-yellow-500" },
   ];
+
+  const WeatherIcon = currentWeather?.icon || Cloud;
+
 
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -39,6 +45,23 @@ export default function AppHeader() {
              <currentEraConfig.icon className="h-4 w-4 sm:h-5 sm:w-5 mr-1 sm:mr-2 text-accent shrink-0" />
              <span className="font-medium text-foreground truncate">{currentEraConfig.name}</span>
           </div>
+
+          {currentWeather && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center border border-border rounded-lg px-2 py-1.5 shadow-sm bg-card text-xs sm:text-sm">
+                    <WeatherIcon className="h-4 w-4 sm:h-5 sm:w-5 mr-1 sm:mr-2 text-muted-foreground shrink-0" />
+                    <span className="font-medium text-foreground truncate">{currentWeather.name}</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{currentWeather.description}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+
 
           <div className="flex items-center space-x-1 sm:space-x-2 border border-border rounded-lg p-1 sm:p-1.5 shadow-sm bg-card">
             {resourcesToShow.map(res => {
@@ -61,3 +84,4 @@ export default function AppHeader() {
     </header>
   );
 }
+
