@@ -15,16 +15,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Recycle, Zap, Sparkles, Leaf, Award } from 'lucide-react'; 
+import { Recycle, Zap, Sparkles, Leaf, Award as TrophyIcon } from 'lucide-react'; 
 import { SidebarMenuButton } from '../ui/sidebar';
 import { useToast } from '@/hooks/use-toast';
-import { ALL_CROPS_MAP, PERMANENT_UPGRADES_CONFIG } from '@/config/gameConfig'; 
+import { ALL_CROPS_MAP, PERMANENT_UPGRADES_CONFIG, getCurrentPrestigeTier } from '@/config/gameConfig'; 
 
 export default function PrestigeAltar() {
   const { state, dispatch } = useGame();
   const { toast } = useToast();
 
-  // Allow prestige if at least one era beyond "Present" is unlocked (e.g., Prehistoric)
   const canPrestige = state.unlockedEras.length > 1; 
 
   const handlePrestige = () => {
@@ -46,7 +45,9 @@ export default function PrestigeAltar() {
     .filter(([_, level]) => level > 0)
     .map(([id, level]) => `${PERMANENT_UPGRADES_CONFIG[id]?.name} (Lvl ${level})`)
     .join(', ') || "None yet";
-
+  
+  const currentPrestigeTier = getCurrentPrestigeTier(state.prestigeCount);
+  const PrestigeTierIcon = currentPrestigeTier.icon;
 
   return (
     <AlertDialog>
@@ -58,7 +59,7 @@ export default function PrestigeAltar() {
           onClick={() => { if(canPrestige) dispatch({ type: 'USER_INTERACTION' })}}
         >
           <Recycle className="w-4 h-4 mr-2" />
-          <span className="group-data-[collapsible=icon]:hidden">Prestige ({state.prestigeCount})</span>
+          <span className="group-data-[collapsible=icon]:hidden truncate">Prestige ({state.prestigeCount}) - <PrestigeTierIcon className="inline h-3 w-3 mr-1"/>{currentPrestigeTier.id}</span>
         </SidebarMenuButton>
       </AlertDialogTrigger>
       <AlertDialogContent>
@@ -71,12 +72,13 @@ export default function PrestigeAltar() {
             <ul className="list-disc list-inside ml-4 my-2 text-sm space-y-1">
               <li>Your current <Zap className="w-3 h-3 inline text-yellow-500"/> Chrono-Energy: <span className="font-semibold">{Math.floor(state.chronoEnergy)}</span></li>
               <li>All discovered <Sparkles className="w-3 h-3 inline text-accent"/> Rare Seeds ({state.rareSeeds.length}): <span className="font-semibold text-xs">{rareSeedDisplay}</span></li>
-              <li>All purchased <Award className="w-3 h-3 inline text-purple-500"/> Permanent Upgrades: <span className="font-semibold text-xs">{permanentUpgradesDisplay}</span></li>
+              <li>All purchased <TrophyIcon className="w-3 h-3 inline text-purple-500"/> Permanent Upgrades: <span className="font-semibold text-xs">{permanentUpgradesDisplay}</span></li>
+              <li>Your Player Name, Garden Name, and completed NPC Quests.</li>
             </ul>
             Rare seeds and Permanent Upgrades provide significant boosts across all prestiges.
             This is a significant step, recommended after exploring multiple eras and accumulating Chrono-Energy.
             <br/> <br/>
-            You have Prestiged <span className="font-bold">{state.prestigeCount}</span> times.
+            You have Prestiged <span className="font-bold">{state.prestigeCount}</span> times. Your current tier is <span className="font-bold"><PrestigeTierIcon className="inline h-4 w-4 mr-1"/>{currentPrestigeTier.title}</span>.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

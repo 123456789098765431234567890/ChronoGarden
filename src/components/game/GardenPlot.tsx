@@ -6,8 +6,8 @@ import { useGame } from '@/contexts/GameContext';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from "@/components/ui/progress";
-import { ERAS, ALL_CROPS_MAP, UPGRADES_CONFIG, ALL_GAME_RESOURCES_MAP, Crop, GARDEN_PLOT_SIZE, EraID, PERMANENT_UPGRADES_CONFIG, SYNERGY_CONFIG, WEATHER_CONFIG, IDLE_THRESHOLD_SECONDS, calculateEffectiveGrowthTime, NANO_VINE_DECAY_WINDOW_SECONDS } from '@/config/gameConfig';
-import type { PlantedCrop } from '@/contexts/GameContext';
+import { ERAS, ALL_CROPS_MAP, UPGRADES_CONFIG, ALL_GAME_RESOURCES_MAP, Crop, GARDEN_PLOT_SIZE, PERMANENT_UPGRADES_CONFIG, SYNERGY_CONFIG, WEATHER_CONFIG, IDLE_THRESHOLD_SECONDS, calculateEffectiveGrowthTime, NANO_VINE_DECAY_WINDOW_SECONDS } from '@/config/gameConfig';
+import type { PlantedCrop } from '@/config/gameConfig';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Sprout, Clock, PlusCircle, Trash2, CheckCircle, Ban } from 'lucide-react';
 import Image from 'next/image';
@@ -47,6 +47,7 @@ export default function GardenPlot() {
 
 
   const handlePlantCrop = (slotIndex: number) => {
+    dispatch({ type: 'USER_INTERACTION' });
     if (selectedCropToPlant) {
       const cropToPlant = ALL_CROPS_MAP[selectedCropToPlant];
       if (cropToPlant.specialGrowthCondition && !cropToPlant.specialGrowthCondition(state)) {
@@ -57,7 +58,6 @@ export default function GardenPlot() {
         toast({ title: "Cannot Plant", description: `${cropToPlant.name} prefers quiet. Try planting when you've been idle for a bit.`, variant: "default" });
         return;
       }
-      dispatch({ type: 'USER_INTERACTION' });
       dispatch({ type: 'PLANT_CROP', payload: { cropId: selectedCropToPlant, era: state.currentEra, slotIndex } });
     }
   };
@@ -91,21 +91,14 @@ export default function GardenPlot() {
         const effectiveGrowthTime = calculateEffectiveGrowthTime(cropConfig.growthTime, plantedCrop.cropId, plantedCrop.era, state);
         const isMature = (clientCurrentTime - plantedCrop.plantedAt) / 1000 >= effectiveGrowthTime;
         if (!isMature) {
-            // Clearing a non-mature plant might still trigger HARVEST_CROP to ensure any logic (like penalties) is handled.
-            // Or, you could add a specific 'CLEAR_SLOT' action if penalties are desired.
              dispatch({ type: 'HARVEST_CROP', payload: { slotIndex } }); 
         } else if (cropConfig.id === 'nanovine') {
-            // NanoVine doesn't get "uprooted" if mature, it gets harvested or decays.
-            // If it's mature and being cleared, it means harvest.
             dispatch({ type: 'HARVEST_CROP', payload: { slotIndex } });
         }
     }
-    // If slot is empty or becomes empty after harvest logic, this ensures it's clear.
-    // This path is less likely if HARVEST_CROP correctly nulls the slot.
     if (!state.plotSlots[slotIndex]) {
         const newPlotSlots = [...state.plotSlots];
         newPlotSlots[slotIndex] = null;
-        // dispatch({ type: 'UPDATE_PLOT_SLOTS', payload: newPlotSlots }); // Example if you had direct plot update
     }
   };
   
@@ -118,9 +111,23 @@ export default function GardenPlot() {
     if (cropConfig.specialGrowthCondition && !cropConfig.specialGrowthCondition(state)) {
       return 0; 
     }
-    if (cropConfig.isIdleDependent && (effectiveCurrentTime - state.lastUserInteractionTime) / 1000 < IDLE_THRESHOLD_SECONDS) {
-      return Math.min(100, ((effectiveCurrentTime - plantedCrop.plantedAt) / 1000 / calculateEffectiveGrowthTime(cropConfig.growthTime, plantedCrop.cropId, plantedCrop.era, state)) * 100 * 0.1); // Grow very slowly if active
+    if (cropConfig.isIdleDependent && effectiveCurrentTime !== 0 && state.lastUserInteractionTime !== 0 && (effectiveCurrentTime - state.lastUserInteractionTime) / 1000 < IDLE_THRESHOLD_SECONDS) {
+      // If player is active, idle-dependent crops grow very slowly or not at all.
+      // We can represent this as a small fraction of their normal progress or cap it.
+      // For simplicity, let's say they grow at 10% speed if active.
+      const growthTime = calculateEffectiveGrowthTime(cropConfig.growthTime, plantedCrop.cropId, plantedCrop.era, state);
+      const elapsedTimeWhileActive = (effectiveCurrentTime - Math.max(plantedCrop.plantedAt, state.lastUserInteractionTime - IDLE_THRESHOLD_SECONDS * 1000)) / 1000;
+      const normalElapsedTime = (effectiveCurrentTime - plantedCrop.plantedAt) / 1000;
+      
+      const activePenaltyFactor = 0.1; // Grows at 10% speed if player is active
+
+      const progressIfIdle = Math.min(100, (normalElapsedTime / growthTime) * 100);
+      const progressIfActive = Math.min(100, (elapsedTimeWhileActive / growthTime) * 100 * activePenaltyFactor);
+      
+      // This logic is tricky. Simpler: if active now, return very slow progress based on total elapsed time.
+      return Math.min(100, ((effectiveCurrentTime - plantedCrop.plantedAt) / 1000 / growthTime) * 100 * activePenaltyFactor);
     }
+
 
     const growthTime = calculateEffectiveGrowthTime(cropConfig.growthTime, plantedCrop.cropId, plantedCrop.era, state);
     const elapsedTime = (effectiveCurrentTime - plantedCrop.plantedAt) / 1000;
@@ -136,8 +143,8 @@ export default function GardenPlot() {
     if (cropConfig.specialGrowthCondition && !cropConfig.specialGrowthCondition(state)) {
         return "Stalled (Condition)";
     }
-    if (cropConfig.isIdleDependent && (effectiveCurrentTime - state.lastUserInteractionTime) / 1000 < IDLE_THRESHOLD_SECONDS) {
-      return "Stalled (Active)";
+    if (cropConfig.isIdleDependent && effectiveCurrentTime !== 0 && state.lastUserInteractionTime !== 0 && (effectiveCurrentTime - state.lastUserInteractionTime) / 1000 < IDLE_THRESHOLD_SECONDS) {
+      return `Stalled (Active ~${IDLE_THRESHOLD_SECONDS - Math.floor((effectiveCurrentTime - state.lastUserInteractionTime) / 1000)}s)`;
     }
 
     const growthTime = calculateEffectiveGrowthTime(cropConfig.growthTime, plantedCrop.cropId, plantedCrop.era, state);
@@ -191,10 +198,10 @@ export default function GardenPlot() {
 
   const gardenPlotBgStyles = {
     "Present": "bg-green-800/10",
-    "Prehistoric": "bg-yellow-900/20", // Darker for prehistoric
+    "Prehistoric": "bg-yellow-900/20", 
     "Medieval": "bg-gray-700/20",
     "Modern": "bg-blue-800/10",
-    "Future": "bg-indigo-900/30", // Metallic/glowy feel for future
+    "Future": "bg-indigo-900/30", 
   }
   const gardenPlotBg = gardenPlotBgStyles[state.currentEra] || "bg-muted/20";
 
@@ -234,9 +241,9 @@ export default function GardenPlot() {
                     plantDisabled = true;
                     plantTooltip = `${crop.name} has unmet growth conditions. Check Synergies.`;
                 }
-                 if (crop.isIdleDependent && clientCurrentTime && (clientCurrentTime - state.lastUserInteractionTime) / 1000 < IDLE_THRESHOLD_SECONDS) {
+                 if (crop.isIdleDependent && clientCurrentTime && state.lastUserInteractionTime !==0 && (clientCurrentTime - state.lastUserInteractionTime) / 1000 < IDLE_THRESHOLD_SECONDS) {
                     plantDisabled = true;
-                    plantTooltip = `${crop.name} needs quiet to plant. Try being idle for ${IDLE_THRESHOLD_SECONDS}s.`;
+                    plantTooltip = `${crop.name} needs quiet. Try being idle for ${IDLE_THRESHOLD_SECONDS - Math.floor((clientCurrentTime - state.lastUserInteractionTime)/1000)}s.`;
                 }
 
                 return (
@@ -254,7 +261,7 @@ export default function GardenPlot() {
 
         <div className="grid grid-cols-3 gap-2 sm:gap-4">
           {state.plotSlots.map((slotData, index) => {
-            const slot = slotData as PlantedCrop | null; // Type assertion
+            const slot = slotData as PlantedCrop | null; 
             if (slot && slot.era === state.currentEra) { 
               const cropConfig = ALL_CROPS_MAP[slot.cropId];
               if (!cropConfig) return ( 
@@ -330,7 +337,7 @@ export default function GardenPlot() {
                        </Tooltip>
                     )}
                   </CardFooter>
-                  {(!isMature || cropConfig.id === 'nanovine') && nanoVineDecayTimeLeft !== "Decayed!" && ( // Allow uprooting NanoVine even if mature but not decayed
+                  {(!isMature || cropConfig.id === 'nanovine') && nanoVineDecayTimeLeft !== "Decayed!" && ( 
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button 
@@ -356,9 +363,9 @@ export default function GardenPlot() {
                      plantDisabled = true;
                      plantTooltipMessage = `${selectedCropConfig.name} has unmet growth conditions.`;
                  }
-                 if (selectedCropConfig && selectedCropConfig.isIdleDependent && clientCurrentTime && (clientCurrentTime - state.lastUserInteractionTime)/1000 < IDLE_THRESHOLD_SECONDS) {
+                 if (selectedCropConfig && selectedCropConfig.isIdleDependent && clientCurrentTime && state.lastUserInteractionTime !== 0 && (clientCurrentTime - state.lastUserInteractionTime)/1000 < IDLE_THRESHOLD_SECONDS) {
                     plantDisabled = true;
-                    plantTooltipMessage = `${selectedCropConfig.name} needs quiet. Try being idle.`;
+                    plantTooltipMessage = `${selectedCropConfig.name} needs quiet. Try being idle for ${IDLE_THRESHOLD_SECONDS - Math.floor((clientCurrentTime - state.lastUserInteractionTime)/1000)}s.`;
                  }
 
                  if (clientCurrentTime === null) plantDisabled = true;

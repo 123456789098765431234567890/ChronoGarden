@@ -6,7 +6,7 @@ import { SidebarTrigger } from '@/components/ui/sidebar';
 import ChronoLeafIcon from '@/components/icons/ChronoLeafIcon';
 import { useGame } from '@/contexts/GameContext';
 import { ERAS, ALL_GAME_RESOURCES_MAP, WEATHER_CONFIG } from '@/config/gameConfig';
-import { Zap, Droplets, Sun, Coins, Power, Cloud, CloudRain, CloudSun } from 'lucide-react';
+import { Zap, Droplets, Sun, Coins, Power, Cloud } from 'lucide-react'; // Removed specific weather icons, will use WeatherIcon
 import { ThemeToggle } from '@/components/ui/theme-toggle'; 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -32,8 +32,8 @@ export default function AppHeader() {
       <div className="container mx-auto flex h-16 items-center px-4 sm:px-6 lg:px-8">
         <div className="mr-2 hidden md:flex items-center">
           <ChronoLeafIcon className="h-8 w-8 mr-2 text-primary" />
-          <h1 className="font-headline text-2xl font-bold text-foreground">
-            ChronoGarden
+          <h1 className="font-headline text-2xl font-bold text-foreground truncate max-w-[200px] sm:max-w-none" title={state.gardenName}>
+            {state.gardenName || "ChronoGarden"}
           </h1>
         </div>
         <div className="md:hidden">

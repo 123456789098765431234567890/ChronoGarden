@@ -23,12 +23,15 @@ import UpgradesPanel from '@/components/game/UpgradesPanel';
 import ChronoNexusPanel from '@/components/game/ChronoNexusPanel'; 
 import SynergyPanel from '@/components/game/SynergyPanel'; 
 import GoalsPanel from '@/components/game/GoalsPanel';
+import ProfilePanel from '@/components/game/ProfilePanel'; // Phase 5
+import LeaderboardPanel from '@/components/game/LeaderboardPanel'; // Phase 5
+import VisitorPanel from '@/components/game/VisitorPanel'; // Phase 5
 import { useGame } from '@/contexts/GameContext';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ShieldQuestion, Droplets, MessageSquare, Award, Link2, Target as TargetIcon } from 'lucide-react';
-import { ERAS, GAME_VERSION, IDLE_THRESHOLD_SECONDS } from '@/config/gameConfig';
+import { ShieldQuestion, Droplets, MessageSquare, Award, Link2, Target as TargetIcon, Users, BarChart3, UserCircle2Icon } from 'lucide-react'; // Phase 5 icons
+import { ERAS, GAME_VERSION } from '@/config/gameConfig';
 import { useToast } from "@/hooks/use-toast";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; // Keep Tabs import
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; 
 
 
 export default function GameClientLayout() {
@@ -54,7 +57,7 @@ export default function GameClientLayout() {
 
   useEffect(() => {
     Object.entries(state.goalStatus).forEach(([goalId, status]) => {
-        const goalConfig = ERAS[state.currentEra]; // Goal config might not be era specific for toast
+        const goalConfig = GOALS_CONFIG[goalId as GoalID]; // Goal config might not be era specific for toast
         if (status.completed) {
             const sessionKey = `toast_goal_completed_${goalId}`;
             if (typeof window !== 'undefined' && !sessionStorage.getItem(sessionKey)) {
@@ -67,6 +70,20 @@ export default function GameClientLayout() {
         }
     });
   }, [state.goalStatus, toast, state.currentEra]);
+
+  useEffect(() => {
+    if(state.activeQuest?.status === 'completed') {
+      const questConfig = NPC_QUESTS_CONFIG[state.activeQuest.questId];
+      const sessionKey = `toast_quest_completed_${state.activeQuest.questId}`;
+      if (questConfig && (typeof window !== 'undefined' && !sessionStorage.getItem(sessionKey))) {
+          toast({
+              title: "🤝 Quest Complete! 🤝",
+              description: `You completed "${questConfig.title}" for ${NPC_VISITORS_CONFIG[state.activeQuest.visitorId]?.name}! Reward granted.`,
+          });
+          if (typeof window !== 'undefined') sessionStorage.setItem(sessionKey, 'true');
+      }
+    }
+  }, [state.activeQuest, toast]);
 
 
   const handleManualWater = () => {
@@ -96,13 +113,16 @@ export default function GameClientLayout() {
         <AppHeader />
         <div className="p-2 sm:p-4 md:p-6 flex-grow">
           <Tabs defaultValue="garden" className="w-full" value={activeTab} onValueChange={(newTab) => { setActiveTab(newTab); dispatch({type: 'USER_INTERACTION'})}}>
-            <TabsList className="grid w-full grid-cols-3 sm:grid-cols-7 mb-4">
+            <TabsList className="grid w-full grid-cols-4 sm:grid-cols-5 md:grid-cols-10 mb-4 text-xs sm:text-sm">
               <TabsTrigger value="garden" className="font-headline">Garden</TabsTrigger>
+              <TabsTrigger value="visitors" className="font-headline flex items-center"><Users className="w-3 h-3 mr-1 sm:mr-1" />Visitors</TabsTrigger>
               <TabsTrigger value="automation" className="font-headline">Automation</TabsTrigger>
               <TabsTrigger value="upgrades" className="font-headline">Upgrades</TabsTrigger>
-              <TabsTrigger value="chrono_nexus" className="font-headline flex items-center"><Award className="w-4 h-4 mr-1 sm:mr-2" /> Nexus</TabsTrigger>
-              <TabsTrigger value="synergies" className="font-headline flex items-center"><Link2 className="w-4 h-4 mr-1 sm:mr-2" />Synergies</TabsTrigger>
-              <TabsTrigger value="goals" className="font-headline flex items-center"><TargetIcon className="w-4 h-4 mr-1 sm:mr-2" />Goals</TabsTrigger>
+              <TabsTrigger value="chrono_nexus" className="font-headline flex items-center"><Award className="w-3 h-3 mr-1 sm:mr-1" /> Nexus</TabsTrigger>
+              <TabsTrigger value="synergies" className="font-headline flex items-center"><Link2 className="w-3 h-3 mr-1 sm:mr-1" />Synergies</TabsTrigger>
+              <TabsTrigger value="goals" className="font-headline flex items-center"><TargetIcon className="w-3 h-3 mr-1 sm:mr-1" />Goals</TabsTrigger>
+              <TabsTrigger value="profile" className="font-headline flex items-center"><UserCircle2Icon className="w-3 h-3 mr-1 sm:mr-1" />Profile</TabsTrigger>
+              <TabsTrigger value="leaderboard" className="font-headline flex items-center"><BarChart3 className="w-3 h-3 mr-1 sm:mr-1" />Board</TabsTrigger>
               <TabsTrigger value="ai_advisor" className="font-headline">AI Advisor</TabsTrigger>
             </TabsList>
             <TabsContent value="garden">
@@ -112,6 +132,9 @@ export default function GameClientLayout() {
                 </Button>
               </div>
               <GardenPlot />
+            </TabsContent>
+             <TabsContent value="visitors">
+              <VisitorPanel />
             </TabsContent>
             <TabsContent value="automation">
               <AutomationStation />
@@ -128,6 +151,12 @@ export default function GameClientLayout() {
              <TabsContent value="goals">
               <GoalsPanel />
             </TabsContent>
+            <TabsContent value="profile">
+              <ProfilePanel />
+            </TabsContent>
+            <TabsContent value="leaderboard">
+              <LeaderboardPanel />
+            </TabsContent>
             <TabsContent value="ai_advisor">
               <AICropAdvisor />
             </TabsContent>
@@ -135,7 +164,7 @@ export default function GameClientLayout() {
         
         </div>
         <footer className="text-center p-4 border-t text-xs text-muted-foreground flex items-center justify-center space-x-4">
-          <span>ChronoGarden: Temporal Harvest - {GAME_VERSION} - &copy; {new Date().getFullYear()}</span>
+          <span>{state.gardenName} by {state.playerName} - ChronoGarden {GAME_VERSION} &copy; {new Date().getFullYear()}</span>
           <Button variant="outline" size="sm" asChild onClick={() => dispatch({ type: 'USER_INTERACTION' })}>
             <a href="https://forms.office.com/r/Ezbv7xmgpK" target="_blank" rel="noopener noreferrer">
               <MessageSquare className="mr-2 h-4 w-4" />
@@ -160,18 +189,21 @@ export default function GameClientLayout() {
             <h2 className="text-xl font-headline mb-4">How to Play ChronoGarden ({GAME_VERSION})</h2>
             <p className="text-sm mb-2">Cultivate plants across eras, automate, and unlock powerful upgrades!</p>
             <ul className="list-disc list-inside text-sm space-y-1 mb-4">
-              <li>**Eras:** Unlock Present, Prehistoric, and Future eras via the Time Portal (left sidebar) using Chrono-Energy. Each era has unique crops, resources, automations, and upgrades.</li>
-              <li>**Weather:** Random weather events (Clear, Sunny, Rainy, Temporal Storm, Solar Eclipse) affect gameplay. Check the top bar for current conditions and their effects.</li>
-              <li>**Resources:** Manage shared resources like Water, Coins, Energy, and Chrono-Energy. Era-specific resources also exist.</li>
-              <li>**Garden Tab:** Plant and harvest crops specific to the current era. Progress bars show growth. Some crops have special conditions (e.g., Glowshroom needs player idle, NanoVine decays if not harvested fast).</li>
-              <li>**Automation Tab:** Build era-specific machines to automate tasks. Future AI machines are smarter.</li>
-              <li>**Upgrades Tab:** Purchase era-specific upgrades to boost efficiency. These reset on Prestige.</li>
-              <li>**Chrono Nexus Tab:** (Unlocks after 1 Prestige) Spend Chrono-Energy and Rare Seeds for powerful permanent upgrades that persist across Prestiges (e.g., global grow speed, starting bonuses).</li>
-              <li>**Synergies Tab:** Discover passive bonuses unlocked by achieving milestones across different eras.</li>
+              <li>**Eras & Navigation:** Unlock and switch between eras using the Time Portal (left sidebar).</li>
+              <li>**Resources:** Manage shared resources (Water, Coins) and era-specific ones. Displayed in sidebar.</li>
+              <li>**Garden Tab:** Plant/harvest crops. Progress bars show growth. Special crops like Glowshroom (needs idle) and NanoVine (decays fast) exist.</li>
+              <li>**Visitors Tab:** Occasionally, visitors from the current era may appear with quests for rewards.</li>
+              <li>**Automation Tab:** Build era-specific machines to automate tasks.</li>
+              <li>**Upgrades Tab:** Purchase era-specific upgrades. These reset on Prestige.</li>
+              <li>**Chrono Nexus Tab:** (Unlocks after 1 Prestige) Spend Chrono-Energy & Rare Seeds for permanent upgrades.</li>
+              <li>**Synergies Tab:** Discover passive bonuses by achieving milestones across eras.</li>
               <li>**Goals Tab:** Complete objectives for rewards like Chrono-Energy and Rare Seeds.</li>
+              <li>**Profile Tab:** Customize your Player and Garden Name. Export/Import basic garden data.</li>
+              <li>**Leaderboard Tab:** (Mock) View your rank based on various game stats.</li>
               <li>**AI Advisor Tab:** Get tips for your current era.</li>
-              <li>**Rare Seeds:** 1% base chance on harvest (can be upgraded) to find a rare seed for that crop. Rare seeds grant permanent boosts (faster growth, +1 yield, auto-plant chance).</li>
-              <li>**Prestige (Bottom Left Sidebar):** Reset your garden (resources, plots, era-upgrades) to keep Chrono-Energy, Rare Seeds, and Permanent Upgrades. This is key to long-term progression.</li>
+              <li>**Weather:** Random weather events (Clear, Sunny, Rainy, Temporal Storm, Solar Eclipse) affect gameplay. Check the top bar.</li>
+              <li>**Rare Seeds:** Small chance on harvest. Grant permanent boosts (faster growth, +1 yield, auto-plant chance).</li>
+              <li>**Prestige (Bottom Left Sidebar):** Reset progress (except Chrono-Energy, Rare Seeds, Permanent Upgrades, Profile names, completed quests) to gain long-term advantages. Unlocks Chrono Nexus.</li>
               <li>**Save/Load:** Game saves automatically to your browser.</li>
             </ul>
             <Button onClick={() => { setIsHelpOpen(false); dispatch({type: 'USER_INTERACTION'})}} className="w-full">Close</Button>

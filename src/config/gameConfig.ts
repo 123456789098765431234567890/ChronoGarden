@@ -1,6 +1,6 @@
 
 import type { ComponentType } from 'react';
-import { Briefcase, Atom, Settings, BrainCircuit, Sprout, Home, Leaf, Clock, Droplets, FlaskConical, Scroll, Dna, Bone, Tractor, Sun, Package, Wheat, Zap, Sparkles, Coins as CoinsIcon, Power, Flower2, Carrot as CarrotIcon, Apple as AppleIcon, Wind, SunDim, Mountain, Feather as FeatherIcon, SlidersHorizontal, Rocket, Recycle, CloudRain, CloudLightning, Target, Trophy } from 'lucide-react'; // Added CloudLightning
+import { Briefcase, Atom, Settings, BrainCircuit, Sprout, Home, Leaf, Clock, Droplets, FlaskConical, Scroll, Dna, Bone, Tractor, Sun, Package, Wheat, Zap, Sparkles, Coins as CoinsIcon, Power, Flower2, Carrot as CarrotIcon, Apple as AppleIcon, Wind, SunDim, Mountain, Feather as FeatherIcon, SlidersHorizontal, Rocket, Recycle, CloudRain, CloudLightning, Target, Trophy, UserCircle, Palette, CheckSquare, Gift, Award } from 'lucide-react';
 
 export type EraID = "Present" | "Prehistoric" | "Medieval" | "Modern" | "Future";
 
@@ -114,11 +114,58 @@ export interface GoalConfigItem {
   statToTrack: keyof GameState['goalProgressTrackers'];
 }
 
+export type QuestType = 'harvestSpecificCrop' | 'growWhileWeather';
+export type QuestStatus = 'inactive' | 'active' | 'completed';
+
+export interface QuestConfig {
+  id: string;
+  title: string;
+  description: string;
+  type: QuestType;
+  era: EraID;
+  targetCropId?: string; // For 'harvestSpecificCrop'
+  targetAmount?: number; // For 'harvestSpecificCrop'
+  requiredWeatherId?: WeatherID; // For 'growWhileWeather'
+  durationMinutes?: number; // Optional timer for quest
+  reward: {
+    type: "chronoEnergy" | "rareSeed" | "coins";
+    amount: number;
+  };
+  dialogue: {
+    greeting: string;
+    questAccepted: string;
+    questInProgress: string;
+    questCompleted: string;
+  };
+}
+
+export type VisitorID = "gardenerGreg" | "cavechildKai" | "botanyBot9";
+
+export interface VisitorConfig {
+  id: VisitorID;
+  name: string;
+  era: EraID;
+  icon: ComponentType<{ className?: string }>;
+  quests: QuestConfig[]; // Potential quests this visitor can offer
+  spawnChance: number; // e.g., 0.1 for 10% chance per suitable tick
+}
+
+export type PrestigeTierID = "Novice" | "Apprentice" | "Adept" | "Master" | "Grandmaster";
+export interface PrestigeTierConfig {
+  id: PrestigeTierID;
+  minPrestigeCount: number;
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+}
+
 
 export const GARDEN_PLOT_SIZE = 9;
-export const GAME_VERSION = "v0.5.0"; // Updated Version
-export const IDLE_THRESHOLD_SECONDS = 10; // For Glowshroom
-export const NANO_VINE_DECAY_WINDOW_SECONDS = 20; // After maturity for NanoVine
+export const GAME_VERSION = "v0.6.0";
+export const IDLE_THRESHOLD_SECONDS = 10;
+export const NANO_VINE_DECAY_WINDOW_SECONDS = 20;
+export const VISITOR_SPAWN_CHECK_INTERVAL_SECONDS = 60; // Check every minute
+export const QUEST_PROGRESS_SAVE_INTERVAL_SECONDS = 30;
+
 
 export const INITIAL_RESOURCES: ResourceItem[] = [
   { id: "ChronoEnergy", name: "Chrono-Energy", icon: Zap, description: "Energy to manipulate time, unlock eras, and for powerful upgrades.", initialAmount: 0 },
@@ -526,12 +573,80 @@ export const GOALS_CONFIG: Record<GoalID, GoalConfigItem> = {
   }
 };
 
+// Phase 5: Garden Visitors (NPCs)
+export const NPC_QUESTS_CONFIG: Record<string, QuestConfig> = {
+  present_harvestCarrots: {
+    id: "present_harvestCarrots", title: "Carrot Craving", era: "Present",
+    description: "Gardener Greg really wants some carrots. Harvest 20 Carrots for him.",
+    type: 'harvestSpecificCrop', targetCropId: 'carrot', targetAmount: 20,
+    reward: { type: 'coins', amount: 100 },
+    dialogue: {
+      greeting: "Howdy, partner! Nice lookin' garden you got there. Say, could you help an old timer out?",
+      questAccepted: "Great! I'll be back when you've got those carrots.",
+      questInProgress: "Still working on those carrots? My stomach's rumblin'!",
+      questCompleted: "Much obliged! These are some fine carrots. Here's a little something for your trouble.",
+    }
+  },
+  prehistoric_findGlowshrooms: {
+    id: "prehistoric_findGlowshrooms", title: "Shiny Rocks!", era: "Prehistoric",
+    description: "Cavechild Kai is fascinated by shiny things. Harvest 5 Glowshrooms.",
+    type: 'harvestSpecificCrop', targetCropId: 'glowshroom', targetAmount: 5,
+    reward: { type: 'rareSeed', amount: 1 },
+    dialogue: {
+      greeting: "Ugh! Kai want shiny rock! You find for Kai?",
+      questAccepted: "Kai wait! Bring shiny rock!",
+      questInProgress: "Shiny rock? Where shiny rock?",
+      questCompleted: "Ooh! So shiny! Kai happy! Here, you take this rock. Also shiny.",
+    }
+  },
+  future_needSynthBloomsStorm: {
+    id: "future_needSynthBloomsStorm", title: "Stormy Synthesis", era: "Future",
+    description: "BotanyBot-9 needs data on Synth Blooms grown during a Temporal Storm. Grow and harvest 3 Synth Blooms while a storm is active.",
+    type: 'growWhileWeather', targetCropId: 'synthbloom', targetAmount: 3, requiredWeatherId: 'stormy',
+    reward: { type: 'chronoEnergy', amount: 150 },
+    dialogue: {
+      greeting: "Greetings, Cultivator Unit. Anomaly detected: Temporal Storm. Optimal conditions for unique Synth Bloom data acquisition. Your assistance is requested.",
+      questAccepted: "Acknowledged. Monitoring for Synth Bloom harvest during designated meteorological event.",
+      questInProgress: "Awaiting Synth Bloom data. Ensure harvest occurs during Temporal Storm parameters.",
+      questCompleted: "Data acquired. Chrono-Energy compensation processed. Your efficiency is noted.",
+    }
+  }
+};
+
+export const NPC_VISITORS_CONFIG: Record<VisitorID, VisitorConfig> = {
+  gardenerGreg: {
+    id: "gardenerGreg", name: "Gardener Greg", era: "Present", icon: UserCircle,
+    quests: [NPC_QUESTS_CONFIG.present_harvestCarrots], spawnChance: 0.3
+  },
+  cavechildKai: {
+    id: "cavechildKai", name: "Cavechild Kai", era: "Prehistoric", icon: UserCircle, // Replace with a more thematic icon if available
+    quests: [NPC_QUESTS_CONFIG.prehistoric_findGlowshrooms], spawnChance: 0.25
+  },
+  botanyBot9: {
+    id: "botanyBot9", name: "BotanyBot-9000", era: "Future", icon: Settings,
+    quests: [NPC_QUESTS_CONFIG.future_needSynthBloomsStorm], spawnChance: 0.2
+  }
+};
+
+// Placeholder for TreePalm icon:
+const TreePalm = Award; // Moved before PRESTIGE_TIERS_CONFIG
+
+// Phase 5: Prestige Tiers
+export const PRESTIGE_TIERS_CONFIG: Record<PrestigeTierID, PrestigeTierConfig> = {
+  Novice: { id: "Novice", minPrestigeCount: 0, icon: Sprout, title: "Novice Time Gardener" },
+  Apprentice: { id: "Apprentice", minPrestigeCount: 1, icon: Leaf, title: "Apprentice Chronoculturist" },
+  Adept: { id: "Adept", minPrestigeCount: 5, icon: Flower2, title: "Adept Temporal Botanist" },
+  Master: { id: "Master", minPrestigeCount: 10, icon: TreePalm, title: "Master of Chrono-Harvests" },
+  Grandmaster: { id: "Grandmaster", minPrestigeCount: 20, icon: BrainCircuit, title: "Grandmaster of the Eternal Garden" }
+};
+
+
 export interface GameState {
   currentEra: EraID;
   unlockedEras: EraID[];
   chronoEnergy: number;
   resources: Record<string, number>;
-  plotSlots: Array<any | null>;
+  plotSlots: Array<PlantedCrop | null>;
   automationRules: AutomationRule[];
   activeAutomations: Record<string, boolean>;
   rareSeeds: string[];
@@ -540,8 +655,8 @@ export interface GameState {
   aiSuggestion: string | null;
   upgradeLevels: Record<string, number>;
   lastTick: number;
-  lastUserInteractionTime: number;
-  lastAutoPlantTime: number;
+  lastUserInteractionTime: number; 
+  lastAutoPlantTime: number; 
   prestigeCount: number;
   permanentUpgradeLevels: Record<string, number>;
   synergyStats: {
@@ -556,7 +671,31 @@ export interface GameState {
     carrotsHarvested: number;
     prehistoricUnlocked: number;
     rareSeedsFoundCount: number;
+    // Ensure prestigeCount is part of goalProgressTrackers or handled directly
+    [key: string]: number; // Allow other string keys for dynamic tracking
   };
+  // Phase 5 additions
+  playerName: string;
+  gardenName: string;
+  currentVisitorId: VisitorID | null;
+  activeQuest: {
+    questId: string;
+    visitorId: VisitorID;
+    status: QuestStatus;
+    progress: number; // e.g., number of crops harvested
+    startTime?: number; // For timed quests
+  } | null;
+  completedQuests: string[]; // Array of completed quest IDs
+  totalChronoEnergyEarned: number;
+  totalCropsHarvestedAllTime: number;
+  lastVisitorSpawnCheck: number;
+}
+export interface PlantedCrop {
+  cropId: string;
+  era: EraID; 
+  plantedAt: number;
+  id: string;
+  maturityCheckedForDecay?: boolean; // For NanoVine
 }
 
 export const getRandomWeatherId = (currentWeatherId: WeatherID | null): WeatherID => {
@@ -564,25 +703,24 @@ export const getRandomWeatherId = (currentWeatherId: WeatherID | null): WeatherI
   let randomNum = Math.random() * totalWeight;
   
   for (const weather of Object.values(WEATHER_CONFIG)) {
-    if (weather.id === currentWeatherId && Object.keys(WEATHER_CONFIG).length > 1) continue; // Try not to pick same weather twice if others exist
+    if (weather.id === currentWeatherId && Object.keys(WEATHER_CONFIG).length > 1) continue; 
     if (randomNum < (weather.rarityWeight || 0)) {
       return weather.id;
     }
     randomNum -= (weather.rarityWeight || 0);
   }
-  return "clear"; // Fallback
+  return "clear"; 
 };
 
 export const getRandomWeatherDuration = (weatherId: WeatherID): number => {
     const config = WEATHER_CONFIG[weatherId];
-    if (!config) return 60 * 1000;
+    if (!config) return 60 * 1000; // Default to 1 minute if config not found
     const duration = Math.floor(Math.random() * (config.durationSeconds.max - config.durationSeconds.min + 1)) + config.durationSeconds.min;
     return duration * 1000;
 };
 
 export const COMMON_RESOURCES_FOR_BONUS: Array<keyof GameState['resources']> = ["Water", "Sunlight", "Coins", "Energy", "Nutrients"];
 
-// Helper function to calculate effective growth time, centralizing logic.
 export const calculateEffectiveGrowthTime = (
     baseGrowthTime: number, 
     cropId: string, 
@@ -591,39 +729,50 @@ export const calculateEffectiveGrowthTime = (
   ): number => {
   let growthTime = baseGrowthTime;
 
-  // Permanent global speed boost
   const globalSpeedBoostLevel = gameState.permanentUpgradeLevels.permGlobalGrowSpeed || 0;
   if (globalSpeedBoostLevel > 0) {
     growthTime *= PERMANENT_UPGRADES_CONFIG.permGlobalGrowSpeed.effect(globalSpeedBoostLevel) as number;
   }
 
-  // Rare seed boost
   if (gameState.rareSeeds.includes(cropId)) {
-    growthTime *= 0.9;
+    growthTime *= 0.9; // Rare seeds grow 10% faster
   }
 
-  // Era-specific growth upgrade
   const fasterGrowthUpgradeId = `cropGrowth_${cropEra}`;
   const fasterGrowthLevel = gameState.upgradeLevels[fasterGrowthUpgradeId] || 0;
   if (UPGRADES_CONFIG[fasterGrowthUpgradeId] && fasterGrowthLevel > 0) {
     growthTime *= UPGRADES_CONFIG[fasterGrowthUpgradeId].effect(fasterGrowthLevel);
   }
 
-  // Future era specific automation boost
   if (cropEra === "Future" && gameState.activeAutomations['growthoptimizer_future']) {
-    growthTime *= 0.75;
+    growthTime *= 0.75; // Growth Optimizer Future effect
   }
 
-  // Weather effects
+  // Apply weather effects
   if (gameState.currentWeatherId) {
     const weather = WEATHER_CONFIG[gameState.currentWeatherId];
-    if (weather.effects.globalGrowthSpeedFactor) {
+    if (weather.effects.globalGrowthSpeedFactor) { // Stormy weather
         growthTime *= weather.effects.globalGrowthSpeedFactor;
     }
-    if (cropEra === "Future" && weather.effects.futureCropGrowthFactor) {
+    if (cropEra === "Future" && weather.effects.futureCropGrowthFactor) { // Solar Eclipse
         growthTime *= weather.effects.futureCropGrowthFactor;
     }
   }
   
   return Math.max(1, growthTime); // Ensure growth time is at least 1 second
 };
+
+export const getCurrentPrestigeTier = (prestigeCount: number): PrestigeTierConfig => {
+  let currentTier: PrestigeTierConfig = PRESTIGE_TIERS_CONFIG.Novice;
+  // Ensure PRESTIGE_TIERS_CONFIG is ordered by minPrestigeCount or iterate safely
+  const sortedTiers = Object.values(PRESTIGE_TIERS_CONFIG).sort((a, b) => a.minPrestigeCount - b.minPrestigeCount);
+  for (const tier of sortedTiers) {
+    if (prestigeCount >= tier.minPrestigeCount) {
+      currentTier = tier;
+    } else {
+      break; 
+    }
+  }
+  return currentTier;
+};
+
