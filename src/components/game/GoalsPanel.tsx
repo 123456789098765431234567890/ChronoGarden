@@ -6,7 +6,7 @@ import { useGame } from '@/contexts/GameContext';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { GOALS_CONFIG, GoalConfigItem, ALL_GAME_RESOURCES_MAP } from '@/config/gameConfig';
-import { Target, CheckCircle, Trophy, Zap, Package } from 'lucide-react';
+import { Target, CheckCircle, Trophy, Zap, Package, Sparkles } from 'lucide-react'; // Added Sparkles
 import { Progress } from '@/components/ui/progress';
 import { useToast } from "@/hooks/use-toast";
 
