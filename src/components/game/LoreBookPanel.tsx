@@ -4,7 +4,6 @@
 import React from 'react';
 import { useGame } from '@/contexts/GameContext';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import {
   Accordion,
   AccordionContent,
@@ -13,31 +12,9 @@ import {
 } from "@/components/ui/accordion";
 import { LORE_CONFIG, LoreEntry } from '@/config/gameConfig';
 import { BookOpen, Lock, Unlock, Lightbulb } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
 
 export default function LoreBookPanel() {
-  const { state, dispatch } = useGame();
-  const { toast } = useToast();
-
-  const handleUnlockNextLore = () => {
-    dispatch({ type: 'USER_INTERACTION' });
-    const allLoreIds = Object.keys(LORE_CONFIG);
-    const firstLockedLoreId = allLoreIds.find(id => !state.unlockedLoreIds.includes(id));
-
-    if (firstLockedLoreId) {
-      dispatch({ type: 'UNLOCK_LORE', payload: firstLockedLoreId });
-      toast({
-        title: "Lore Unlocked (Dev Button)",
-        description: `Entry "${LORE_CONFIG[firstLockedLoreId].title}" is now available.`,
-      });
-    } else {
-      toast({
-        title: "All Lore Unlocked",
-        description: "You've uncovered all available secrets... for now!",
-        variant: "default",
-      });
-    }
-  };
+  const { state } = useGame();
 
   return (
     <Card className="shadow-lg">
@@ -72,10 +49,8 @@ export default function LoreBookPanel() {
       </CardContent>
       <CardFooter className="flex-col items-start space-y-2 text-sm text-muted-foreground">
         <p>Fragments of history and understanding will reveal themselves as you delve deeper into the ChronoGarden.</p>
-        <Button onClick={handleUnlockNextLore} variant="outline" size="sm" className="mt-4">
-            Unlock Next Lore (Dev/Test)
-        </Button>
       </CardFooter>
     </Card>
   );
 }
+
