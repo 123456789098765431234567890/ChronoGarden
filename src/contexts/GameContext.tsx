@@ -3,7 +3,7 @@
 
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useReducer, Dispatch, useEffect } from 'react';
-import type { EraID, AutomationRule, Crop, WeatherID, GoalID, VisitorID, QuestConfig, QuestStatus } from '@/config/gameConfig';
+import type { EraID, AutomationRule, Crop, WeatherID, GoalID, VisitorID, QuestConfig, QuestStatus, LeaderboardEntry } from '@/config/gameConfig';
 import { 
     ERAS, INITIAL_RESOURCES, GARDEN_PLOT_SIZE, ALL_CROPS_MAP, 
     AUTOMATION_RULES_CONFIG, UPGRADES_CONFIG, ALL_GAME_RESOURCES_MAP,
@@ -15,6 +15,8 @@ import {
     PRESTIGE_TIERS_CONFIG
 } from '@/config/gameConfig';
 import type { PlantedCrop } from '@/config/gameConfig';
+import { database } from '@/lib/firebase'; // Firebase integration
+import { ref, set, serverTimestamp } from 'firebase/database'; // Firebase RTDB functions
 
 
 type GameState = ConfigGameState;
@@ -100,7 +102,7 @@ type GameAction =
   | { type: 'ACCEPT_QUEST'; payload: { visitorId: VisitorID, questId: string } }
   | { type: 'PROGRESS_QUEST'; payload: { cropId?: string, weatherId?: WeatherID } }
   | { type: 'COMPLETE_QUEST' }
-  | { type: 'FAIL_QUEST' } // New action for failing a quest
+  | { type: 'FAIL_QUEST' } 
   | { type: 'DISMISS_VISITOR' }
   | { type: 'GAME_TICK' };
 
@@ -572,8 +574,6 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
     case 'FAIL_QUEST':
         if (newState.activeQuest) {
             newState.activeQuest.status = 'failed';
-            // Optionally, dismiss visitor immediately or after a short delay/dialogue
-            // For now, just marks as failed, UI can decide to dismiss.
         }
         break;
     case 'DISMISS_VISITOR':
@@ -584,10 +584,10 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
       const now = Date.now();
       if (state.lastTick === 0) { 
         newState.lastTick = now;
-        newState.lastUserInteractionTime = now;
-        newState.lastAutoPlantTime = now;
-        newState.lastVisitorSpawnCheck = now;
-        if (newState.weatherEndTime === 0) {
+        newState.lastUserInteractionTime = state.lastUserInteractionTime === 0 ? now : state.lastUserInteractionTime;
+        newState.lastAutoPlantTime = state.lastAutoPlantTime === 0 ? now : state.lastAutoPlantTime;
+        newState.lastVisitorSpawnCheck = state.lastVisitorSpawnCheck === 0 ? now : state.lastVisitorSpawnCheck;
+        if (newState.weatherEndTime === 0 || newState.weatherEndTime <= now ) {
             const initialWeatherId = getRandomWeatherId(null);
             const initialWeatherDuration = getRandomWeatherDuration(initialWeatherId);
             newState.currentWeatherId = initialWeatherId;
@@ -796,7 +796,8 @@ const gameReducer = (state: GameState, action: GameAction): GameState => {
         const questConfig = NPC_QUESTS_CONFIG[newState.activeQuest.questId];
         if (questConfig && questConfig.durationMinutes && (now - newState.activeQuest.startTime) / (1000 * 60) > questConfig.durationMinutes) {
             newState = gameReducer(newState, { type: 'FAIL_QUEST' }); 
-            newState = gameReducer(newState, { type: 'DISMISS_VISITOR' });
+            // Consider if visitor should be dismissed immediately or if UI handles it
+            // newState = gameReducer(newState, { type: 'DISMISS_VISITOR' });
         }
       }
       newState.lastTick = now;
@@ -993,6 +994,32 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
+  // Effect to update Firebase leaderboard
+  useEffect(() => {
+    if (typeof window !== 'undefined' && state.playerName && state.playerName !== "Time Gardener") {
+      const updateLeaderboard = async () => {
+        try {
+          const playerData: LeaderboardEntry = {
+            id: state.playerName, // Using playerName as ID for simplicity
+            name: state.playerName,
+            totalCropsHarvested: state.totalCropsHarvestedAllTime || 0,
+            prestigeCount: state.prestigeCount || 0,
+            totalChronoEnergyEarned: Math.floor(state.totalChronoEnergyEarned || 0),
+            lastUpdate: serverTimestamp() as unknown as number // Firebase server timestamp
+          };
+          // Using set to overwrite/create the player's entry
+          await set(ref(database, `leaderboard/${state.playerName}`), playerData);
+        } catch (error) {
+          console.error("Error updating leaderboard:", error);
+        }
+      };
+      
+      // Debounce or call directly - for now, direct call on relevant stat changes
+      // A more sophisticated approach might debounce updates.
+      updateLeaderboard();
+    }
+  }, [state.totalCropsHarvestedAllTime, state.prestigeCount, state.totalChronoEnergyEarned, state.playerName]);
+
 
   return (
     <GameContext.Provider value={{ state, dispatch }}>
@@ -1008,3 +1035,4 @@ export const useGame = (): GameContextProps => {
   }
   return context;
 };
+

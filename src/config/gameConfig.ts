@@ -159,16 +159,24 @@ export interface PrestigeTierConfig {
   title: string;
 }
 
+export interface LeaderboardEntry {
+  id: string; // playerName or UID
+  name: string;
+  totalCropsHarvested: number;
+  prestigeCount: number;
+  totalChronoEnergyEarned: number;
+  lastUpdate?: number;
+}
+
 
 export const GARDEN_PLOT_SIZE = 9;
-export const GAME_VERSION = "v0.5.0"; // Updated in previous step, keeping it consistent
+export const GAME_VERSION = "v0.5.1"; 
 export const IDLE_THRESHOLD_SECONDS = 10;
 export const NANO_VINE_DECAY_WINDOW_SECONDS = 20;
 export const VISITOR_SPAWN_CHECK_INTERVAL_SECONDS = 60; // Check every minute
 export const QUEST_PROGRESS_SAVE_INTERVAL_SECONDS = 30; // Not actively used yet but good constant
 
-// Placeholder for TreePalm icon:
-const TreePalm = Award; // Using Award as a placeholder for TreePalm.
+const TreePalm = Award; 
 
 export const PRESTIGE_TIERS_CONFIG: Record<PrestigeTierID, PrestigeTierConfig> = {
   Novice: { id: "Novice", minPrestigeCount: 0, icon: Sprout, title: "Novice Time Gardener" },
@@ -247,7 +255,7 @@ export const ERAS: Record<EraID, EraConfig> = {
     name: "Primordial Jungle",
     description: "Travel to a time of colossal flora and ancient creatures. Harness raw, powerful natural resources.",
     icon: Dna,
-    unlockCost: 100, // Kept from Phase 3
+    unlockCost: 100, 
     availableCrops: ["mossfruit", "dinoroot", "glowshroom"],
     eraSpecificResources: [
        { id: "DinoBone", name: "Dino Bone", icon: Bone, description: "Fossilized bone, a sturdy material." },
@@ -260,7 +268,7 @@ export const ERAS: Record<EraID, EraConfig> = {
     name: "Alchemist's Garden",
     description: "Enter an era of knights, castles, and budding alchemy. (Content for this era coming in a future phase).",
     icon: FlaskConical,
-    unlockCost: 500, // Kept from Phase 3
+    unlockCost: 500, 
     availableCrops: ["mandrake"],
     eraSpecificResources: [],
     specialMechanic: "Alchemy-based upgrades for soil and plants. (Mechanics to be implemented).",
@@ -270,7 +278,7 @@ export const ERAS: Record<EraID, EraConfig> = {
     name: "Automated Farmlands",
     description: "The age of technology and efficiency. (Content for this era coming in a future phase).",
     icon: Settings,
-    unlockCost: 2000, // Kept from Phase 3
+    unlockCost: 2000, 
     availableCrops: ["hydrocorn"],
     eraSpecificResources: [],
     specialMechanic: "Deploy drones, sprinklers, and automated harvesters. (Mechanics to be implemented).",
@@ -280,7 +288,7 @@ export const ERAS: Record<EraID, EraConfig> = {
     name: "Bio-Engineered Domes",
     description: "Step into a future where nature and technology are seamlessly integrated. Optimize crops with AI and control climate.",
     icon: BrainCircuit,
-    unlockCost: 5000, // Kept from Phase 3
+    unlockCost: 5000, 
     availableCrops: ["synthbloom", "nanovine", "quantumbud"],
     eraSpecificResources: [
       { id: "EnergyCredits", name: "Energy Credits", icon: Zap, description: "Universal currency and power source in the Future." },
@@ -676,7 +684,6 @@ export interface GameState {
     prestigeCount: number; // Ensure this is included
     [key: string]: number; 
   };
-  // Phase 5 additions
   playerName: string;
   gardenName: string;
   currentVisitorId: VisitorID | null;
@@ -783,3 +790,4 @@ export const getCurrentPrestigeTier = (prestigeCount: number): PrestigeTierConfi
   }
   return currentTier;
 };
+
